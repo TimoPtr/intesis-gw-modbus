@@ -47,5 +47,11 @@ def detect_temperature_format(raw_setpoint: int | None) -> TemperatureFormat | N
 
 
 def setpoint_step(fmt: TemperatureFormat) -> float:
-    """Return the finest setpoint step the format can express, in °C."""
+    """
+    Return the setpoint step a user interface should offer.
+
+    Whole-degree formats step by 1 in the gateway's own unit; the value is
+    not converted for Fahrenheit because Home Assistant applies the step in
+    the display unit, where 1 °F is exact. Decicelsius units accept halves.
+    """
     return 0.5 if fmt is TemperatureFormat.DECICELSIUS else 1.0
