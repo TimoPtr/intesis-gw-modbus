@@ -6,7 +6,7 @@ on:  # yamllint disable-line rule:truthy
     types: [published]
 
 permissions:
-  contents: read
+  contents: read  # the build only reads the tagged checkout
 
 jobs:
   publish:
