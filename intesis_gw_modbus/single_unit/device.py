@@ -190,8 +190,9 @@ class IntesisSingleUnitGateway(Device):
         count = self.max_fan_speeds
         if count is None:
             count = DEFAULT_FAN_SPEED_COUNT
-        return (FanSpeed.AUTO,) + tuple(
-            speed for code, speed in self.brand.fan_speeds.items() if 1 <= code <= count
+        return (
+            FanSpeed.AUTO,
+            *(s for code, s in self.brand.fan_speeds.items() if 1 <= code <= count),
         )
 
     @property
