@@ -8,6 +8,9 @@ declares registers as `Component` classes and takes a `ModbusUnit`; it never
 opens a link. Its main consumer is the Home Assistant core integration
 `intesis_modbus`, which must keep working whenever the public API changes.
 
+The project is independent of HMS Networks and Intesis; keep the README's
+disclaimer and never present the library as official.
+
 ## Essential commands
 
 ```bash

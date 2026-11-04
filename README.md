@@ -5,6 +5,12 @@ boxes that put an air conditioner's indoor unit on a Modbus RTU or TCP bus.
 Built on [modbus-connection](https://pypi.org/project/modbus-connection/): the
 library models the registers and takes a `ModbusUnit`; it never opens a link.
 
+This is an independent, community project. It is not affiliated with,
+endorsed by or supported by HMS Networks, Intesis or any air-conditioner
+manufacturer; Intesis and the gateway part numbers are their trademarks and are
+used only to identify the hardware. The register maps come from the public user
+manuals.
+
 This library was built with the help of [Claude](https://claude.ai) (Anthropic).
 
 ## Supported gateways
