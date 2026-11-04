@@ -76,6 +76,12 @@ addopts = [
 [tool.coverage.run]
 branch = true
 
+[tool.coverage.report]
+exclude_also = [
+    "^class .*\\(Protocol\\):",  # protocol bodies never execute
+    "if TYPE_CHECKING:",
+]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
