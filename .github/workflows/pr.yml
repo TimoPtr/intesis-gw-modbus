@@ -6,7 +6,7 @@ on:  # yamllint disable-line rule:truthy
     branches: [main]
 
 permissions:
-  contents: read
+  contents: read  # the checks only read the checkout
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
