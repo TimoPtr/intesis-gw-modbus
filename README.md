@@ -20,6 +20,38 @@ Toshiba `0x1F00`, LG `0x1000`, Hitachi `0x1400`, Samsung `0x1200`) but their
 code and error tables are not written yet: see
 [docs/adding-a-brand.md](docs/adding-a-brand.md).
 
+### Single-unit gateways (INMBSxxx001R000)
+
+One gateway per indoor unit, Modbus RTU only, configured with DIP switches.
+The facts below come from the INMBSMHI001R000 manual; the other brands'
+single-unit gateways are documented the same way but have not been checked.
+
+- EIA-485, 8N2 by default (8N1 is auto-detected), 9600 baud and slave
+  address 1 out of the box. SW3 sets the address and, with SW4, the baud rate
+  (2400 to 115200); SW4 also sets the temperature format (x1 °C, x10 °C or °F)
+  and switches in the on-board 120 Ω termination. Every DIP change needs a
+  power cycle.
+- Function codes 3, 4, 6 and 16, with 16 limited to one register per request.
+  A block read must not touch an undefined address, so the library reads the
+  documented blocks only, one request each.
+
+### Multi-unit gateways (INMBSxxx048O000 / INMBSxxx128O000)
+
+One gateway for a whole MHI Superlink bus, configured with Intesis' LinkBoxMB
+Windows tool rather than switches.
+
+- Modbus TCP (port 502 by default) and/or Modbus RTU over EIA-485 or EIA-232
+  (1200 to 38400 baud, parity selectable; the slave address is set in the tool).
+- Function codes 3, 4 and 6 only. Each indoor unit owns a 20-register block
+  and a poll of a range must stay inside valid addresses.
+
+### Timing
+
+The library asks for a 3 s request timeout on both families and a 20 ms gap
+between requests on the single-unit gateway. These are conservative values
+derived from the bus parameters, not measured; both live in the device
+classes.
+
 ## Home Assistant
 
 A core Home Assistant integration (`intesis_modbus`) built on this library is
@@ -80,19 +112,6 @@ infers the format from a raw setpoint register when it is not known.
 A multi-unit gateway is `IntesisMultiUnitGateway(unit, brand=..., unit_count=48)`;
 after the first `async_update()` its `indoor_units` dict holds one
 `IndoorUnitView` per unit the gateway talks to.
-
-## Hardware notes
-
-The single-unit gateway speaks Modbus RTU at 9600 baud, 8N2, address 1 by
-default. Its DIP switches set the address (SW3), the baud rate (SW3/SW4), the
-temperature format (SW4: x1 °C, x10 °C or °F) and the 120 Ω termination (SW4);
-every change needs a power cycle.
-
-Only function codes 3, 4, 6 and 16 are implemented, and a block read must not
-touch an undefined address. The library therefore reads the documented blocks
-only, one request each. Timing defaults (`require_timeout(3.0)`,
-`set_message_spacing(0.02)`) are conservative values derived from the bus
-parameters, not measured; both live in the device classes.
 
 ## Development
 
