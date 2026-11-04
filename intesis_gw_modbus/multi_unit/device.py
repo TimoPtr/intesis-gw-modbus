@@ -1,10 +1,17 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """The multi-unit gateway as a typed device, one view per indoor unit."""
 
+from collections import deque
 from collections.abc import Iterable, Mapping
 from typing import Final
 
-from modbus_connection import IllegalDataAddressError, IllegalFunctionError, ModbusUnit
+from modbus_connection import (
+    IllegalDataAddressError,
+    IllegalFunctionError,
+    ModbusConnectionError,
+    ModbusError,
+    ModbusUnit,
+)
 from modbus_connection.model import ComponentGroup, Device, Raw, UpdateReport
 
 from intesis_gw_modbus.brands.base import BrandTable
@@ -32,6 +39,9 @@ from .components import (
 )
 
 POLLED: Final = ("status", "units")
+
+REDISCOVERY_BATCH: Final = 8
+"""Empty blocks re-probed after each poll, round-robin, so late units appear."""
 
 _REQUIRED_TIMEOUT: Final = 3.0
 
@@ -205,6 +215,7 @@ class IntesisMultiUnitGateway(Device):
         self.status = GatewayStatus(unit)
         self.units: ComponentGroup | None = None  # built by setup
         self.indoor_units: dict[int, IndoorUnitView] = {}
+        self._empty: deque[IndoorUnit] = deque()
 
     async def _async_setup(self) -> None:
         """
@@ -214,8 +225,10 @@ class IntesisMultiUnitGateway(Device):
         error propagates, so a busy reply does not drop a unit for good; the
         base class runs setup again on the next poll. A gateway that reports
         no unit at all is treated the same way: it is probably still booting.
+        Served blocks with no unit are kept and re-probed by later polls.
         """
         present: list[IndoorUnit] = []
+        empty: list[IndoorUnit] = []
         for number in range(self.unit_count):
             component = IndoorUnit(self.modbus_unit, number)
             try:
@@ -224,16 +237,53 @@ class IntesisMultiUnitGateway(Device):
                 continue
             if component.comm_error is False:
                 present.append(component)
+            else:
+                empty.append(component)
         if not present:
             raise NoIndoorUnitsError(
                 f"none of the {self.unit_count} indoor unit blocks reports a unit"
             )
-        self.indoor_units = {c.number: IndoorUnitView(c, self.brand) for c in present}
-        self.units = ComponentGroup(self.modbus_unit, present)
+        self._empty = deque(empty)
+        self._adopt(present)
+
+    def _adopt(self, components: Iterable[IndoorUnit]) -> None:
+        """Add indoor units and rebuild the pooled read over all of them."""
+        for component in components:
+            self.indoor_units[component.number] = IndoorUnitView(component, self.brand)
+        self.indoor_units = dict(sorted(self.indoor_units.items()))
+        self.units = ComponentGroup(
+            self.modbus_unit, [view.component for view in self.indoor_units.values()]
+        )
 
     async def async_update(self) -> UpdateReport:
-        """Refresh the gateway status and every present indoor unit."""
-        return await self.async_poll(POLLED)
+        """
+        Refresh the gateway status and every present indoor unit.
+
+        Then re-probe the next few empty blocks; a unit that has come online
+        since setup joins ``indoor_units`` and is polled from now on.
+        """
+        report = await self.async_poll(POLLED)
+        await self._async_rediscover()
+        return report
+
+    async def _async_rediscover(self) -> None:
+        found: list[IndoorUnit] = []
+        for _ in range(min(REDISCOVERY_BATCH, len(self._empty))):
+            component = self._empty.popleft()
+            try:
+                await component.async_update()
+            except ModbusConnectionError:
+                self._empty.appendleft(component)
+                raise
+            except ModbusError:
+                self._empty.append(component)
+                continue
+            if component.comm_error is False:
+                found.append(component)
+            else:
+                self._empty.append(component)
+        if found:
+            self._adopt(found)
 
     async def async_read_raw(self, names: Iterable[str] = POLLED) -> Raw:
         """Every register this device reads, undecoded, for diagnostics."""

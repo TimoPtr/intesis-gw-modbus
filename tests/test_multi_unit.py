@@ -2,13 +2,20 @@
 """The multi-unit gateway device."""
 
 import pytest
-from modbus_connection import IllegalDataAddressError, ServerDeviceBusyError
+from modbus_connection import (
+    IllegalDataAddressError,
+    ModbusConnectionError,
+    ServerDeviceBusyError,
+)
 from modbus_connection.mock import MockModbusUnit, WriteEvent
 
 from intesis_gw_modbus.brands.mhi import MHI
 from intesis_gw_modbus.enums import FanSpeed, Mode, VanePosition
 from intesis_gw_modbus.errors import NoIndoorUnitsError, UnsupportedValueError
-from intesis_gw_modbus.multi_unit.device import IntesisMultiUnitGateway
+from intesis_gw_modbus.multi_unit.device import (
+    REDISCOVERY_BATCH,
+    IntesisMultiUnitGateway,
+)
 
 from .conftest import INDOOR_UNIT_BLOCK, seed_multi_unit
 
@@ -30,9 +37,11 @@ async def test_only_present_units_are_polled(mock_modbus_unit: MockModbusUnit) -
         for event in mock_modbus_unit.read_events
         for address in range(event.address, event.address + event.count)
     }
-    assert covered == (
-        set(range(14)) | set(range(20, 34)) | set(range(140, 154)) | {2994}
-    )
+    polled = set(range(14)) | set(range(20, 34)) | set(range(140, 154)) | {2994}
+    assert polled <= covered
+    probed = {e.address // 20 for e in mock_modbus_unit.read_events} - {0, 1, 7, 149}
+    assert len(probed) == REDISCOVERY_BATCH
+    assert probed.isdisjoint({0, 1, 7})
 
 
 async def test_setup_reads_each_block_without_crossing(
@@ -43,7 +52,77 @@ async def test_setup_reads_each_block_without_crossing(
     await d.async_update()
     assert sorted(d.indoor_units) == [127]
     assert all(e.count <= 14 for e in mock_modbus_unit.read_events)
-    assert len(mock_modbus_unit.read_events) == 130  # 128 probes + status + unit
+    assert len(mock_modbus_unit.read_events) == 130 + REDISCOVERY_BATCH
+
+
+def _blocks_probed(unit: MockModbusUnit) -> set[int]:
+    return {e.address // 20 for e in unit.read_events if e.address < 2994}
+
+
+async def test_late_unit_is_discovered(mock_modbus_unit: MockModbusUnit) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    assert sorted(d.indoor_units) == [0]
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[5 * 20 + offset] = value
+    sweeps = -(-47 // REDISCOVERY_BATCH)
+    for _ in range(sweeps):
+        await d.async_update()
+    assert sorted(d.indoor_units) == [0, 5]
+    assert d.indoor_units[5].present is True
+    assert d.indoor_units[5].mode is Mode.HEAT
+    mock_modbus_unit.read_events.clear()
+    report = await d.async_update()
+    assert report.updated == {"status", "units"}
+    assert {0, 5} <= _blocks_probed(mock_modbus_unit)
+
+
+async def test_rediscovery_sweeps_every_empty_block(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.read_events.clear()
+    sweeps = -(-47 // REDISCOVERY_BATCH)
+    for _ in range(sweeps):
+        await d.async_update()
+    assert _blocks_probed(mock_modbus_unit) == set(range(48))
+    mock_modbus_unit.read_events.clear()
+    await d.async_update()
+    assert len(_blocks_probed(mock_modbus_unit) - {0}) == REDISCOVERY_BATCH
+
+
+async def test_failed_probe_keeps_block_absent(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[20 + offset] = value
+    mock_modbus_unit.fail_read(20, ServerDeviceBusyError())
+    sweeps = -(-47 // REDISCOVERY_BATCH)
+    for _ in range(sweeps):
+        report = await d.async_update()
+        assert report.updated == {"status", "units"}
+    assert sorted(d.indoor_units) == [0]
+    assert 1 in _blocks_probed(mock_modbus_unit)
+
+
+async def test_probe_propagates_a_dead_link(mock_modbus_unit: MockModbusUnit) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.fail_read(20, ModbusConnectionError())
+
+    async def sweep() -> None:
+        for _ in range(-(-47 // REDISCOVERY_BATCH)):
+            await d.async_update()
+
+    with pytest.raises(ModbusConnectionError):
+        await sweep()
 
 
 async def test_refused_block_means_absent(mock_modbus_unit: MockModbusUnit) -> None:

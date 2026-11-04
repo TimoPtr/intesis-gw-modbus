@@ -111,7 +111,9 @@ infers the format from a raw setpoint register when it is not known.
 
 A multi-unit gateway is `IntesisMultiUnitGateway(unit, brand=..., unit_count=48)`;
 after the first `async_update()` its `indoor_units` dict holds one
-`IndoorUnitView` per unit the gateway talks to.
+`IndoorUnitView` per unit the gateway talks to. Each later update re-probes
+the next 8 empty blocks, so a unit that comes online afterwards joins the dict
+within a few polls; a unit that drops out stays listed with `present` false.
 
 ## Development
 
