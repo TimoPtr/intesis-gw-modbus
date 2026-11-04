@@ -35,13 +35,13 @@ class Control(Component):
     vane = integer(3, signed=False, nan=INIT_VALUE, writable=True)
     setpoint = integer(4, nan=INIT_VALUE, writable=True)
     ambient_temperature = integer(5, nan=INIT_VALUE)
-    window_contact = boolean(6, writable=True)
-    gateway_disabled = boolean(7, writable=True)
-    remote_control_disabled = boolean(8, writable=True)
-    operation_hours = integer(9, signed=False)
-    alarm = boolean(10)
+    window_contact = boolean(6, nan=INIT_VALUE, writable=True)
+    gateway_disabled = boolean(7, nan=INIT_VALUE, writable=True)
+    remote_control_disabled = boolean(8, nan=INIT_VALUE, writable=True)
+    operation_hours = integer(9, signed=False, nan=INIT_VALUE)
+    alarm = boolean(10, nan=INIT_VALUE)
     error_code = integer(11, signed=False)
-    window_timeout = integer(13, signed=False, writable=_minutes_0_30)
+    window_timeout = integer(13, signed=False, nan=INIT_VALUE, writable=_minutes_0_30)
     baudrate_code = integer(14, signed=False)
     slave_address = integer(15, signed=False)
 
@@ -63,7 +63,7 @@ class Window(Component):
 
     register_ranges = ((31, 31),)
 
-    window_open = boolean(31)
+    window_open = boolean(31, nan=INIT_VALUE)
 
 
 class Lock(Component):
@@ -89,10 +89,10 @@ class Diagnostics(Component):
 
     register_ranges = ((55, 55), (81, 81), (97, 98))
 
-    undervoltage_hours = integer(55, signed=False)
-    error_address = integer(81, signed=False)
-    block_periodic_sendings = boolean(97, writable=True)
-    is_master = boolean(98, writable=True)
+    undervoltage_hours = integer(55, signed=False, nan=INIT_VALUE)
+    error_address = integer(81, signed=False, nan=INIT_VALUE)
+    block_periodic_sendings = boolean(97, nan=INIT_VALUE, writable=True)
+    is_master = boolean(98, nan=INIT_VALUE, writable=True)
 
 
 class Temperatures(Component):

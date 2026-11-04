@@ -2,7 +2,7 @@
 """The data that distinguishes one AC brand's Intesis gateways from another's."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from intesis_gw_modbus.enums import FanSpeed, Mode, VanePosition
 from intesis_gw_modbus.errors import ErrorTable, UnsupportedValueError
@@ -23,11 +23,21 @@ class BrandTable:
     device_id: int | None
     modes: Mapping[int, Mode]
     fan_speeds: Mapping[int, FanSpeed]
+    """Register 2 codes on a unit with the most speeds the brand supports."""
+    fan_speed_sets: Mapping[int, Mapping[int, FanSpeed]] = field(default_factory=dict)
+    """Register 2 codes by the unit's speed count (register 21), where they
+    differ from ``fan_speeds``: a 2-speed MHI unit uses 1 Low / 2 High."""
     vane_positions: Mapping[int, VanePosition]
     multi_modes: Mapping[int, Mode]
     multi_fan_speeds: Mapping[int, FanSpeed]
     multi_louver_positions: Mapping[int, VanePosition]
     errors: ErrorTable
+
+    def fan_speeds_for(self, count: int | None) -> Mapping[int, FanSpeed]:
+        """Return the register 2 code map for a unit with ``count`` speeds."""
+        if count is None:
+            return self.fan_speeds
+        return self.fan_speed_sets.get(count, self.fan_speeds)
 
     def code_for[T](self, mapping: Mapping[int, T], value: T) -> int:
         """Return the register code a mapping assigns to ``value``."""

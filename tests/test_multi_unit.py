@@ -2,15 +2,15 @@
 """The multi-unit gateway device."""
 
 import pytest
-from modbus_connection import IllegalDataAddressError
+from modbus_connection import IllegalDataAddressError, ServerDeviceBusyError
 from modbus_connection.mock import MockModbusUnit, WriteEvent
 
 from intesis_gw_modbus.brands.mhi import MHI
 from intesis_gw_modbus.enums import FanSpeed, Mode, VanePosition
-from intesis_gw_modbus.errors import UnsupportedValueError
+from intesis_gw_modbus.errors import NoIndoorUnitsError, UnsupportedValueError
 from intesis_gw_modbus.multi_unit.device import IntesisMultiUnitGateway
 
-from .conftest import seed_multi_unit
+from .conftest import INDOOR_UNIT_BLOCK, seed_multi_unit
 
 
 def gw(unit: MockModbusUnit, count: int = 48) -> IntesisMultiUnitGateway:
@@ -38,12 +38,12 @@ async def test_only_present_units_are_polled(mock_modbus_unit: MockModbusUnit) -
 async def test_setup_reads_each_block_without_crossing(
     mock_modbus_unit: MockModbusUnit,
 ) -> None:
-    seed_multi_unit(mock_modbus_unit, present=())
+    seed_multi_unit(mock_modbus_unit, present=(127,))
     d = gw(mock_modbus_unit, 128)
     await d.async_update()
-    assert d.indoor_units == {}
+    assert sorted(d.indoor_units) == [127]
     assert all(e.count <= 14 for e in mock_modbus_unit.read_events)
-    assert len(mock_modbus_unit.read_events) == 129  # 128 probes + status
+    assert len(mock_modbus_unit.read_events) == 130  # 128 probes + status + unit
 
 
 async def test_refused_block_means_absent(mock_modbus_unit: MockModbusUnit) -> None:
@@ -166,7 +166,7 @@ async def test_timing_requested(mock_modbus_unit: MockModbusUnit) -> None:
 
 
 async def test_hw_comm_error(mock_modbus_unit: MockModbusUnit) -> None:
-    seed_multi_unit(mock_modbus_unit, present=())
+    seed_multi_unit(mock_modbus_unit, present=(0,))
     mock_modbus_unit.holding[2994] = 1
     d = gw(mock_modbus_unit)
     await d.async_update()
@@ -192,3 +192,27 @@ async def test_read_raw_covers_status_and_units(
     assert raw["holding"][2994] == 0
     assert raw["holding"][143] == 22
     assert 20 not in raw["holding"]
+
+
+async def test_busy_reply_during_setup_is_not_absence(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1))
+    mock_modbus_unit.fail_read(20, ServerDeviceBusyError())
+    d = gw(mock_modbus_unit)
+    with pytest.raises(ServerDeviceBusyError):
+        await d.async_update()
+    mock_modbus_unit.fail_read(20, None)
+    await d.async_update()
+    assert sorted(d.indoor_units) == [0, 1]
+
+
+async def test_no_units_at_setup_is_retried(mock_modbus_unit: MockModbusUnit) -> None:
+    seed_multi_unit(mock_modbus_unit, present=())
+    d = gw(mock_modbus_unit)
+    with pytest.raises(NoIndoorUnitsError):
+        await d.async_update()
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[40 + offset] = value
+    await d.async_update()
+    assert sorted(d.indoor_units) == [2]

@@ -81,6 +81,11 @@ MHI: Final = BrandTable(
         3: FanSpeed.HIGH,
         4: FanSpeed.POWERFUL,
     },
+    fan_speed_sets={
+        1: {0: FanSpeed.AUTO, 1: FanSpeed.HIGH},
+        2: {0: FanSpeed.AUTO, 1: FanSpeed.LOW, 2: FanSpeed.HIGH},
+        3: {0: FanSpeed.AUTO, 1: FanSpeed.LOW, 2: FanSpeed.MEDIUM, 3: FanSpeed.HIGH},
+    },
     vane_positions={
         1: VanePosition.POSITION_1,
         2: VanePosition.POSITION_2,

@@ -52,3 +52,13 @@ def test_mhi_error_table() -> None:
     assert MHI.errors[1] == ("E1", "Remote controller communication error")
     assert MHI.errors[63] == ("E63", "Emergency stop")
     assert all(remote == f"E{code}" for code, (remote, _) in MHI.errors.items())
+
+
+def test_fan_speeds_for_count() -> None:
+    assert MHI.fan_speeds_for(None) is MHI.fan_speeds
+    assert MHI.fan_speeds_for(4) is MHI.fan_speeds
+    assert MHI.fan_speeds_for(2) == {
+        0: FanSpeed.AUTO,
+        1: FanSpeed.LOW,
+        2: FanSpeed.HIGH,
+    }

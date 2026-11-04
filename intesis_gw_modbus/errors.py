@@ -51,3 +51,7 @@ class WrongGatewayError(IntesisError):
 
 class UnsupportedValueError(IntesisError, ValueError):
     """A value the gateway, unit or brand cannot accept."""
+
+
+class NoIndoorUnitsError(IntesisError):
+    """A multi-unit gateway reported no indoor unit; it may still be booting."""

@@ -290,3 +290,63 @@ async def test_read_raw_covers_all(mock_modbus_unit: MockModbusUnit) -> None:
     assert raw["holding"][49] == 0x0F00
     assert 12 not in raw["holding"]
     assert 47 not in raw["holding"]
+
+
+async def test_initialising_gateway_reads_none_everywhere(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_initialising_single_unit(mock_modbus_unit)
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    for name in (
+        "window_contact",
+        "gateway_disabled",
+        "remote_control_disabled",
+        "operation_hours",
+        "alarm",
+        "window_open",
+        "window_timeout_minutes",
+        "undervoltage_hours",
+        "error_address",
+        "block_periodic_sendings",
+        "is_master",
+        "real_setpoint",
+        "external_temperature",
+        "outdoor_intake_temperature",
+        "input_reference_temperature",
+        "return_path_temperature",
+        "max_fan_speeds",
+    ):
+        assert getattr(d, name) is None, name
+
+
+async def test_initialising_gateway_does_not_warn(
+    mock_modbus_unit: MockModbusUnit, caplog: pytest.LogCaptureFixture
+) -> None:
+    seed_initialising_single_unit(mock_modbus_unit)
+    await gw(mock_modbus_unit).async_update()
+    assert "no mapping" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (1, (FanSpeed.AUTO, FanSpeed.HIGH)),
+        (2, (FanSpeed.AUTO, FanSpeed.LOW, FanSpeed.HIGH)),
+        (3, (FanSpeed.AUTO, FanSpeed.LOW, FanSpeed.MEDIUM, FanSpeed.HIGH)),
+    ],
+)
+async def test_fan_speed_sets_follow_register_21(
+    mock_modbus_unit: MockModbusUnit, count: int, expected: tuple[FanSpeed, ...]
+) -> None:
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.holding[21] = count
+    mock_modbus_unit.holding[2] = count  # the top speed's code on this unit
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    assert d.available_fan_speeds == expected
+    assert d.fan_speed is FanSpeed.HIGH
+    writes: list[WriteEvent] = []
+    mock_modbus_unit.on_write(writes.append)
+    await d.async_set_fan_speed(FanSpeed.HIGH)
+    assert [(w.address, w.values[0]) for w in writes] == [(2, count)]

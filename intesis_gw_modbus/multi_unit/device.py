@@ -4,12 +4,17 @@
 from collections.abc import Iterable, Mapping
 from typing import Final
 
-from modbus_connection import ModbusExceptionError, ModbusUnit
+from modbus_connection import IllegalDataAddressError, IllegalFunctionError, ModbusUnit
 from modbus_connection.model import ComponentGroup, Device, Raw, UpdateReport
 
 from intesis_gw_modbus.brands.base import BrandTable
 from intesis_gw_modbus.enums import FanSpeed, Mode, VanePosition
-from intesis_gw_modbus.errors import ErrorInfo, UnsupportedValueError, decode_error
+from intesis_gw_modbus.errors import (
+    ErrorInfo,
+    NoIndoorUnitsError,
+    UnsupportedValueError,
+    decode_error,
+)
 
 from .components import (
     ALL_FAN,
@@ -190,22 +195,33 @@ class IntesisMultiUnitGateway(Device):
         self.unit_count = unit_count
         unit.require_timeout(_REQUIRED_TIMEOUT)
         self.status = GatewayStatus(unit)
-        self.units: ComponentGroup | None = None
+        self.units: ComponentGroup | None = None  # built by setup
         self.indoor_units: dict[int, IndoorUnitView] = {}
 
     async def _async_setup(self) -> None:
-        """Probe every block once; a unit answering with no comm error is present."""
+        """
+        Probe every block once; a unit answering with no comm error is present.
+
+        A block the gateway does not serve means no unit there. Any other
+        error propagates, so a busy reply does not drop a unit for good; the
+        base class runs setup again on the next poll. A gateway that reports
+        no unit at all is treated the same way: it is probably still booting.
+        """
         present: list[IndoorUnit] = []
         for number in range(self.unit_count):
             component = IndoorUnit(self.modbus_unit, number)
             try:
                 await component.async_update()
-            except ModbusExceptionError:
+            except (IllegalDataAddressError, IllegalFunctionError):
                 continue
             if component.comm_error is False:
                 present.append(component)
+        if not present:
+            raise NoIndoorUnitsError(
+                f"none of the {self.unit_count} indoor unit blocks reports a unit"
+            )
         self.indoor_units = {c.number: IndoorUnitView(c, self.brand) for c in present}
-        self.units = ComponentGroup(self.modbus_unit, present) if present else None
+        self.units = ComponentGroup(self.modbus_unit, present)
 
     async def async_update(self) -> UpdateReport:
         """Refresh the gateway status and every present indoor unit."""

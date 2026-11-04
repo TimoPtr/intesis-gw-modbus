@@ -12,7 +12,13 @@ from .enums import (
     TemperatureFormat,
     VanePosition,
 )
-from .errors import ErrorInfo, IntesisError, UnsupportedValueError, WrongGatewayError
+from .errors import (
+    ErrorInfo,
+    IntesisError,
+    NoIndoorUnitsError,
+    UnsupportedValueError,
+    WrongGatewayError,
+)
 from .models import KNOWN_DEVICE_IDS, MODELS, GatewayModel, model_for_device_id
 from .multi_unit.device import IndoorUnitView, IntesisMultiUnitGateway
 from .single_unit.device import IntesisSingleUnitGateway
@@ -36,6 +42,7 @@ __all__ = [
     "IntesisMultiUnitGateway",
     "IntesisSingleUnitGateway",
     "Mode",
+    "NoIndoorUnitsError",
     "TemperatureFormat",
     "UnsupportedValueError",
     "VanePosition",

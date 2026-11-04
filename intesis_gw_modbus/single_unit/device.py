@@ -143,9 +143,17 @@ class IntesisSingleUnitGateway(Device):
         return _lookup(self.brand.modes, self.control.mode)
 
     @property
+    def _fan_speed_codes(self) -> Mapping[int, FanSpeed]:
+        """Register 2 codes for the speed count this unit reports."""
+        count = self.max_fan_speeds
+        return self.brand.fan_speeds_for(
+            DEFAULT_FAN_SPEED_COUNT if count is None else count
+        )
+
+    @property
     def fan_speed(self) -> FanSpeed | None:
         """The fan speed."""
-        return _lookup(self.brand.fan_speeds, self.control.fan_speed)
+        return _lookup(self._fan_speed_codes, self.control.fan_speed)
 
     @property
     def vane(self) -> VanePosition | None:
@@ -190,9 +198,10 @@ class IntesisSingleUnitGateway(Device):
         count = self.max_fan_speeds
         if count is None:
             count = DEFAULT_FAN_SPEED_COUNT
+        codes = self._fan_speed_codes
         return (
             FanSpeed.AUTO,
-            *(s for code, s in self.brand.fan_speeds.items() if 1 <= code <= count),
+            *(s for code, s in codes.items() if 1 <= code <= count),
         )
 
     @property
@@ -220,7 +229,7 @@ class IntesisSingleUnitGateway(Device):
                 f"fan speed {speed} is not available on this unit"
             )
         await self.control.write(
-            "fan_speed", self.brand.code_for(self.brand.fan_speeds, speed)
+            "fan_speed", self.brand.code_for(self._fan_speed_codes, speed)
         )
 
     async def async_set_vane(self, position: VanePosition) -> None:
