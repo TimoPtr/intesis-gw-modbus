@@ -69,36 +69,44 @@ class IndoorUnitView:
         """Whether the gateway currently talks to this unit."""
         return self.component.comm_error is False
 
+    def _live[T](self, value: T) -> T | None:
+        """Return a block field, or None while the gateway cannot reach the unit."""
+        return value if self.present else None
+
     @property
     def power(self) -> bool | None:
         """Whether the unit is on."""
-        return self.component.power
+        return self._live(self.component.power)
 
     @property
     def mode(self) -> Mode | None:
         """The operating mode."""
-        return _lookup(self.brand.multi_modes, self.component.mode)
+        return _lookup(self.brand.multi_modes, self._live(self.component.mode))
 
     @property
     def fan_speed(self) -> FanSpeed | None:
         """The fan speed."""
-        return _lookup(self.brand.multi_fan_speeds, self.component.fan_speed)
+        return _lookup(
+            self.brand.multi_fan_speeds, self._live(self.component.fan_speed)
+        )
 
     @property
     def vane(self) -> VanePosition | None:
         """The louver position."""
-        return _lookup(self.brand.multi_louver_positions, self.component.louver)
+        return _lookup(
+            self.brand.multi_louver_positions, self._live(self.component.louver)
+        )
 
     @property
     def setpoint(self) -> float | None:
         """The target temperature."""
-        raw = self.component.setpoint
+        raw = self._live(self.component.setpoint)
         return None if raw is None else float(raw)
 
     @property
     def current_temperature(self) -> float | None:
         """The room temperature the unit reports."""
-        raw = self.component.room_temperature
+        raw = self._live(self.component.room_temperature)
         return None if raw is None else float(raw)
 
     @property
@@ -119,28 +127,28 @@ class IndoorUnitView:
     @property
     def error(self) -> ErrorInfo | None:
         """The decoded error code."""
-        return decode_error(self.component.error_code, self.brand.errors)
+        return decode_error(self._live(self.component.error_code), self.brand.errors)
 
     @property
     def remote_control_locked(self) -> bool | None:
         """Whether the wall remote controller is locked out."""
-        unlocked = self.component.remote_control_unlocked
+        unlocked = self._live(self.component.remote_control_unlocked)
         return None if unlocked is None else not unlocked
 
     @property
     def filter_sign(self) -> bool | None:
         """Whether the filter sign is lit."""
-        return self.component.filter_sign
+        return self._live(self.component.filter_sign)
 
     @property
     def compressor_on(self) -> bool | None:
         """Whether the compressor runs."""
-        return self.component.compressor_on
+        return self._live(self.component.compressor_on)
 
     @property
     def thermo_on(self) -> bool | None:
         """Whether the thermostat calls for output (inverter units only)."""
-        return self.component.thermo_on
+        return self._live(self.component.thermo_on)
 
     async def async_set_power(self, on: bool) -> None:  # noqa: FBT001
         """Turn the unit on or off."""

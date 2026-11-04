@@ -130,12 +130,21 @@ async def test_unit_that_drops_out_reads_none(mock_modbus_unit: MockModbusUnit) 
     seed_multi_unit(mock_modbus_unit, present=(3,))
     d = gw(mock_modbus_unit)
     await d.async_update()
-    mock_modbus_unit.holding[60] = 1  # communication error
-    mock_modbus_unit.holding[62] = 9  # unknown mode code
+    mock_modbus_unit.holding[60] = 1  # communication error, block otherwise intact
     await d.async_update()
     u = d.indoor_units[3]
     assert u.present is False
+    assert u.power is None
     assert u.mode is None
+    assert u.fan_speed is None
+    assert u.vane is None
+    assert u.setpoint is None
+    assert u.current_temperature is None
+    assert u.error is None
+    assert u.filter_sign is None
+    assert u.compressor_on is None
+    assert u.thermo_on is None
+    assert u.remote_control_locked is None
 
 
 async def test_all_units_commands(mock_modbus_unit: MockModbusUnit) -> None:
