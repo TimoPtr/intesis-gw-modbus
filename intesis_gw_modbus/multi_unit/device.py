@@ -323,7 +323,7 @@ class IntesisMultiUnitGateway(Device):
             view.component.notify()
 
     async def _async_rediscover(self) -> list[IndoorUnit]:
-        """Probe the next empty blocks; a block leaves the queue once its read completed."""
+        """Probe the next empty blocks; a block leaves the queue once it was read."""
         found: list[IndoorUnit] = []
         try:
             for _ in range(min(REDISCOVERY_BATCH, len(self._empty))):
