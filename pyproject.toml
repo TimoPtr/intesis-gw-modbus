@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=84.2.1", "setuptools-scm>=10.3.4"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intesis-gw-modbus"
+dynamic = ["version"]
+description = "Intesis INMBS Modbus gateways for air conditioners, on modbus-connection."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+authors = [{ name = "Timothy", email = "6560631+TimoPtr@users.noreply.github.com" }]
+keywords = ["modbus", "intesis", "air-conditioner", "mitsubishi-heavy-industries", "home-assistant"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Home Automation",
+    "Typing :: Typed",
+]
+dependencies = ["modbus-connection[tmodbus]>=4.12.7"]
+
+[project.urls]
+Homepage = "https://github.com/TimoPtr/intesis-gw-modbus"
+Repository = "https://github.com/TimoPtr/intesis-gw-modbus"
+Issues = "https://github.com/TimoPtr/intesis-gw-modbus/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.4.1.post1",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.3",
+    "mypy==2.4.1",
+    "yamllint==1.38.0",
+]
+build = ["build==1.6.1", "twine==7.0.0"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
+    "D203", # no-blank-line-before-class (incompatible with formatter)
+    "D212", # multi-line-summary-first-line (incompatible with formatter)
+    "D105", # missing docstring in magic method (standard protocol methods)
+    "COM812", # incompatible with formatter
+    "ISC001", # incompatible with formatter
+    "EM101",  # exception message string literal (overly pedantic)
+    "EM102",  # exception message f-string literal (overly pedantic)
+    "TRY003", # long messages in raise (overly pedantic)
+    "TC001",  # move stdlib import into TYPE_CHECKING (adds complexity)
+    "TC002",  # move third-party import into TYPE_CHECKING (adds complexity)
+    "RET504", # unnecessary assignment before return (used for mypy type narrowing)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "SLF001", "D", "PLR2004", "FBT003"]
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = [
+    "--cov=intesis_gw_modbus",
+    "--cov-report=term-missing",
+    "--cov-fail-under=100",
+    "-p", "no:homeassistant",
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "^class .*\\(Protocol\\):",  # protocol bodies never execute
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.setuptools_scm]
+
+[tool.setuptools.packages.find]
+include = ["intesis_gw_modbus*"]
+
+[tool.setuptools.package-data]
+intesis_gw_modbus = ["py.typed"]
