@@ -24,7 +24,7 @@ jobs:
           python-version: "3.15"
 
       - name: Install build tools
-        run: pip install build
+        run: pip install ".[build]"
 
       - name: Build package
         run: python -m build

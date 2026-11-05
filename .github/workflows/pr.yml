@@ -41,3 +41,30 @@ jobs:
 
       - name: Tests
         run: pytest tests/
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # setuptools-scm derives the version from tags
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.15"
+
+      - name: Install build tools
+        run: pip install ".[build]"
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check metadata
+        run: twine check --strict dist/*
+
+      - name: Install the wheel in a clean environment and import it
+        run: |
+          python -m venv /tmp/wheel-check
+          /tmp/wheel-check/bin/pip install dist/*.whl
+          /tmp/wheel-check/bin/python -c "import intesis_gw_modbus; print(intesis_gw_modbus.__name__)"
