@@ -1,9 +1,12 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """Temperature format conversion and detection."""
 
+import math
+
 import pytest
 
 from intesis_gw_modbus.enums import TemperatureFormat as F
+from intesis_gw_modbus.errors import UnsupportedValueError
 from intesis_gw_modbus.temperature import (
     INIT_VALUE,
     detect_temperature_format,
@@ -75,6 +78,13 @@ def test_fahrenheit_round_trip() -> None:
 )
 def test_detect_temperature_format(raw: int | None, expected: F | None) -> None:
     assert detect_temperature_format(raw) == expected
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+@pytest.mark.parametrize("fmt", list(F))
+def test_from_celsius_rejects_non_finite(value: float, fmt: F) -> None:
+    with pytest.raises(UnsupportedValueError):
+        from_celsius(value, fmt)
 
 
 def test_setpoint_step() -> None:

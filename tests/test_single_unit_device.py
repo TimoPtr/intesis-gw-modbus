@@ -1,6 +1,8 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """The single-unit gateway device: typed readings, writes, failure handling."""
 
+import math
+
 import pytest
 from modbus_connection import IllegalDataAddressError, ModbusTimeoutError
 from modbus_connection.mock import MockModbusUnit, WriteEvent
@@ -124,7 +126,60 @@ async def test_initialising_gateway_reads_none(
     )
     assert d.error is not None
     assert d.error.state is ErrorState.INITIALISING
+    await d.async_set_setpoint(16.0)
+    assert mock_modbus_unit.holding[4] == d._raw(16.0)
+    with pytest.raises(UnsupportedValueError):
+        await d.async_set_setpoint(30.5)
     assert d.detected_temperature_format is None
+
+
+async def test_fahrenheit_limits_accept_their_own_boundaries(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.holding[4] = 72
+    mock_modbus_unit.holding[24] = 85
+    mock_modbus_unit.holding[25] = 64
+    d = IntesisSingleUnitGateway(
+        mock_modbus_unit, brand=MHI, temperature_format=TemperatureFormat.FAHRENHEIT
+    )
+    await d.async_update()
+    assert d.setpoint_min == 17.8
+    assert d.setpoint_max == 29.4
+    await d.async_set_setpoint(17.78)
+    assert mock_modbus_unit.holding[4] == 64
+    await d.async_set_setpoint(29.44)
+    assert mock_modbus_unit.holding[4] == 85
+    with pytest.raises(UnsupportedValueError):
+        await d.async_set_setpoint(17.0)
+    with pytest.raises(UnsupportedValueError):
+        await d.async_set_setpoint(29.8)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf])
+async def test_non_finite_temperatures_are_refused(
+    mock_modbus_unit: MockModbusUnit, value: float
+) -> None:
+    seed_single_unit(mock_modbus_unit)
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    with pytest.raises(UnsupportedValueError):
+        await d.async_set_setpoint(value)
+    with pytest.raises(UnsupportedValueError):
+        await d.async_set_external_temperature(value)
+    assert mock_modbus_unit.holding[22] == 0x8000
+
+
+async def test_error_address_and_counters_are_readings(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_single_unit(mock_modbus_unit)
+    d = gw(mock_modbus_unit)
+    await d.async_update_readings()
+    assert d.error_address == 0
+    assert d.undervoltage_hours == 3
+    assert "status" in READINGS
+    assert d.block_periodic_sendings is None
 
 
 async def test_celsius_and_fahrenheit_formats(

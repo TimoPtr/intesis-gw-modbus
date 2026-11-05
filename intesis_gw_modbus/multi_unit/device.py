@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """The multi-unit gateway as a typed device, one view per indoor unit."""
 
+import math
 from collections import deque
 from collections.abc import Iterable, Mapping
 from typing import Final
@@ -47,7 +48,9 @@ _REQUIRED_TIMEOUT: Final = 3.0
 
 
 def _whole_setpoint(value: float) -> int:
-    if value != int(value) or not SETPOINT_MIN <= value <= SETPOINT_MAX:
+    if not math.isfinite(value) or value != int(value):
+        raise UnsupportedValueError(f"setpoint {value} must be a whole 16..30 °C")
+    if not SETPOINT_MIN <= value <= SETPOINT_MAX:
         raise UnsupportedValueError(f"setpoint {value} must be a whole 16..30 °C")
     return int(value)
 
@@ -68,6 +71,8 @@ class IndoorUnitView:
         """Wrap a unit's block with the brand's code maps."""
         self.component = component
         self.brand = brand
+        self.reachable = True
+        """Whether the last poll read this unit's block."""
 
     @property
     def number(self) -> int:
@@ -77,7 +82,7 @@ class IndoorUnitView:
     @property
     def present(self) -> bool:
         """Whether the gateway currently talks to this unit."""
-        return self.component.comm_error is False
+        return self.reachable and self.component.comm_error is False
 
     def _live[T](self, value: T) -> T | None:
         """Return a block field, or None while the gateway cannot reach the unit."""
@@ -225,7 +230,7 @@ class IntesisMultiUnitGateway(Device):
         error propagates, so a busy reply does not drop a unit for good; the
         base class runs setup again on the next poll. A gateway that reports
         no unit at all is treated the same way: it is probably still booting.
-        Served blocks with no unit are kept and re-probed by later polls.
+        Every block without a unit, refused or not, is re-probed by later polls.
         """
         present: list[IndoorUnit] = []
         empty: list[IndoorUnit] = []
@@ -234,6 +239,7 @@ class IntesisMultiUnitGateway(Device):
             try:
                 await component.async_update()
             except (IllegalDataAddressError, IllegalFunctionError):
+                empty.append(component)
                 continue
             if component.comm_error is False:
                 present.append(component)
@@ -259,31 +265,55 @@ class IntesisMultiUnitGateway(Device):
         """
         Refresh the gateway status and every present indoor unit.
 
+        Each unit's block is read on its own, so one failing block only marks
+        that unit unreachable; ``units`` counts as updated when any answered.
         Then re-probe the next few empty blocks; a unit that has come online
         since setup joins ``indoor_units`` and is polled from now on.
         """
-        report = await self.async_poll(POLLED)
+        report = await self.async_poll(("status",))
+        await self._async_update_units(report)
         await self._async_rediscover()
         return report
 
+    async def _async_update_units(self, report: UpdateReport) -> None:
+        failures: list[ModbusError] = []
+        for view in self.indoor_units.values():
+            try:
+                await view.component.async_update(notify=False)
+            except ModbusConnectionError:
+                raise
+            except ModbusError as err:
+                view.reachable = False
+                failures.append(err)
+            else:
+                view.reachable = True
+        if len(failures) == len(self.indoor_units):
+            report.failed["units"] = failures[0]
+            return
+        report.updated.add("units")
+        for view in self.indoor_units.values():
+            view.component.notify()
+
     async def _async_rediscover(self) -> None:
         found: list[IndoorUnit] = []
-        for _ in range(min(REDISCOVERY_BATCH, len(self._empty))):
-            component = self._empty.popleft()
-            try:
-                await component.async_update()
-            except ModbusConnectionError:
-                self._empty.appendleft(component)
-                raise
-            except ModbusError:
-                self._empty.append(component)
-                continue
-            if component.comm_error is False:
-                found.append(component)
-            else:
-                self._empty.append(component)
-        if found:
-            self._adopt(found)
+        try:
+            for _ in range(min(REDISCOVERY_BATCH, len(self._empty))):
+                component = self._empty.popleft()
+                try:
+                    await component.async_update()
+                except ModbusConnectionError:
+                    self._empty.appendleft(component)
+                    raise
+                except ModbusError:
+                    self._empty.append(component)
+                    continue
+                if component.comm_error is False:
+                    found.append(component)
+                else:
+                    self._empty.append(component)
+        finally:
+            if found:
+                self._adopt(found)
 
     async def async_read_raw(self, names: Iterable[str] = POLLED) -> Raw:
         """Every register this device reads, undecoded, for diagnostics."""

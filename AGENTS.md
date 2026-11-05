@@ -88,10 +88,16 @@ that need a real unit.
   `BrandTable.fan_speeds_for`; `async_set_external_temperature(None)` writes
   `INIT_VALUE` to hand regulation back to the unit's own sensor.
 - Multi-unit: setup probes every block once and raises `NoIndoorUnitsError`
-  when none answers (the caller retries). A block the gateway refuses means no
-  unit there. Each update re-probes `REDISCOVERY_BATCH` empty blocks
-  round-robin, so late units join `indoor_units`; a unit that drops out stays
-  listed with `present` false and every reading `None`.
+  when none answers (the caller retries). Each poll reads every known unit's
+  block on its own: a failed block marks that unit not `present` while the
+  others refresh, and `units` fails only when every block failed. Each update
+  re-probes `REDISCOVERY_BATCH` empty or refused blocks round-robin, so late
+  units join `indoor_units`; a unit that drops out stays listed with `present`
+  false and every reading `None`.
+- Non-finite temperatures (NaN, infinity) are rejected with
+  `UnsupportedValueError` before any register is touched; setpoint limits are
+  checked in register units so a rounded Celsius bound never rejects a value
+  that encodes to the limit itself.
 - A `WrongGatewayError` means the device id does not belong to the model and
   the caller must stop, not retry.
 

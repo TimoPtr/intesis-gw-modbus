@@ -1,9 +1,11 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """Temperature register scaling for the three DIP-switch formats."""
 
+import math
 from typing import Final
 
 from .enums import TemperatureFormat
+from .errors import UnsupportedValueError
 
 INIT_VALUE: Final = 0x8000
 """Raw value every data register holds while the gateway initialises."""
@@ -26,6 +28,8 @@ def to_celsius(raw: int | None, fmt: TemperatureFormat) -> float | None:
 
 def from_celsius(value: float, fmt: TemperatureFormat) -> int:
     """Encode degrees Celsius into the register value the gateway expects."""
+    if not math.isfinite(value):
+        raise UnsupportedValueError(f"temperature {value} is not a finite number")
     if fmt is TemperatureFormat.DECICELSIUS:
         return round(value * 10)
     if fmt is TemperatureFormat.FAHRENHEIT:

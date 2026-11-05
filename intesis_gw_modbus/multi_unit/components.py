@@ -14,6 +14,7 @@ from modbus_connection import ModbusUnit
 from modbus_connection.model import Component, boolean, integer
 
 from intesis_gw_modbus.errors import UnsupportedValueError
+from intesis_gw_modbus.temperature import INIT_VALUE
 
 UNIT_STRIDE: Final = 20
 """Registers per indoor unit block."""
@@ -43,16 +44,19 @@ class IndoorUnit(Component):
 
     register_ranges = ((0, 13),)
 
+    # The multi-unit manual names no initialisation sentinel; 0x8000 is read
+    # as unknown like on the single-unit family, since no documented value
+    # of these fields reaches it.
     comm_error = boolean(0)
     power = boolean(1, writable=True)
-    mode = integer(2, signed=False, writable=True)
-    setpoint = integer(3, signed=False, writable=_celsius_16_30)
-    fan_speed = integer(4, signed=False, writable=True)
+    mode = integer(2, signed=False, nan=INIT_VALUE, writable=True)
+    setpoint = integer(3, signed=False, nan=INIT_VALUE, writable=_celsius_16_30)
+    fan_speed = integer(4, signed=False, nan=INIT_VALUE, writable=True)
     remote_control_unlocked = boolean(5, writable=True)
-    louver = integer(6, signed=False, writable=True)
-    room_temperature = integer(7, signed=False)
+    louver = integer(6, signed=False, nan=INIT_VALUE, writable=True)
+    room_temperature = integer(7, signed=False, nan=INIT_VALUE)
     filter_sign = boolean(8)
-    error_code = integer(9, signed=False)
+    error_code = integer(9, signed=False, nan=INIT_VALUE)
     compressor_on = boolean(10)
     thermo_on = boolean(13)
 

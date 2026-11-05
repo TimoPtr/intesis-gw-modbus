@@ -84,13 +84,20 @@ class Identity(Component):
     software_version = raw_register(50)
 
 
-class Diagnostics(Component):
-    """Registers 55, 81, 97, 98: counters and gateway behaviour switches."""
+class Status(Component):
+    """Registers 55 and 81: counters and fault location that move on their own."""
 
-    register_ranges = ((55, 55), (81, 81), (97, 98))
+    register_ranges = ((55, 55), (81, 81))
 
     undervoltage_hours = integer(55, signed=False, nan=INIT_VALUE)
     error_address = integer(81, signed=False, nan=INIT_VALUE)
+
+
+class Diagnostics(Component):
+    """Registers 97 and 98: gateway behaviour switches."""
+
+    register_ranges = ((97, 98),)
+
     block_periodic_sendings = boolean(97, nan=INIT_VALUE, writable=True)
     is_master = boolean(98, nan=INIT_VALUE, writable=True)
 

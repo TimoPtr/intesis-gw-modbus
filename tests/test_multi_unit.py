@@ -1,11 +1,15 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """The multi-unit gateway device."""
 
+import math
+
 import pytest
 from modbus_connection import (
     IllegalDataAddressError,
     ModbusConnectionError,
+    ModbusTimeoutError,
     ServerDeviceBusyError,
+    ServerDeviceFailureError,
 )
 from modbus_connection.mock import MockModbusUnit, WriteEvent
 
@@ -133,6 +137,116 @@ async def test_refused_block_means_absent(mock_modbus_unit: MockModbusUnit) -> N
     assert sorted(d.indoor_units) == [0]
 
 
+def _sweeps() -> int:
+    return -(-47 // REDISCOVERY_BATCH)
+
+
+async def test_refused_block_is_probed_again(mock_modbus_unit: MockModbusUnit) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1))
+    mock_modbus_unit.fail_read(20, IllegalDataAddressError())
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    assert sorted(d.indoor_units) == [0]
+    mock_modbus_unit.fail_read(20, None)
+    for _ in range(_sweeps()):
+        await d.async_update()
+    assert sorted(d.indoor_units) == [0, 1]
+
+
+async def test_discoveries_survive_a_dead_link_in_the_same_batch(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[20 + offset] = value
+    mock_modbus_unit.fail_read(40, ModbusConnectionError())
+
+    async def sweep() -> None:
+        for _ in range(_sweeps()):
+            await d.async_update()
+
+    with pytest.raises(ModbusConnectionError):
+        await sweep()
+    assert sorted(d.indoor_units) == [0, 1]
+
+
+async def test_init_sentinel_reads_none_with_healthy_communication(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(3,))
+    for offset in (2, 3, 4, 6, 7, 9):
+        mock_modbus_unit.holding[60 + offset] = 0x8000
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    u = d.indoor_units[3]
+    assert u.present is True
+    assert u.mode is None
+    assert u.setpoint is None
+    assert u.fan_speed is None
+    assert u.vane is None
+    assert u.current_temperature is None
+    assert u.error is None
+
+
+async def test_one_failing_block_does_not_take_the_others_down(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1, 7))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.holding[23] = 25
+    mock_modbus_unit.holding[143] = 26
+    mock_modbus_unit.fail_read(0, ServerDeviceFailureError())
+    report = await d.async_update()
+    assert report.updated == {"status", "units"}
+    assert d.indoor_units[0].present is False
+    assert d.indoor_units[0].setpoint is None
+    assert d.indoor_units[1].present is True
+    assert d.indoor_units[1].setpoint == 25
+    assert d.indoor_units[7].setpoint == 26
+    mock_modbus_unit.fail_read(0, None)
+    await d.async_update()
+    assert d.indoor_units[0].present is True
+
+
+async def test_every_block_failing_marks_units_failed(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.fail_read(0, ServerDeviceFailureError())
+    mock_modbus_unit.fail_read(20, ModbusTimeoutError())
+    report = await d.async_update()
+    assert report.updated == {"status"}
+    assert isinstance(report.failed["units"], ServerDeviceFailureError)
+    assert d.indoor_units[0].present is False
+    assert d.indoor_units[1].present is False
+
+
+async def test_silent_gateway_raises_timeout(mock_modbus_unit: MockModbusUnit) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.fail_read(2994, ModbusTimeoutError())
+    mock_modbus_unit.fail_read(0, ModbusTimeoutError())
+    with pytest.raises(ModbusTimeoutError):
+        await d.async_update()
+
+
+async def test_dead_link_while_polling_units_raises(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.fail_read(0, ModbusConnectionError())
+    with pytest.raises(ModbusConnectionError):
+        await d.async_update()
+
+
 async def test_indoor_unit_view(mock_modbus_unit: MockModbusUnit) -> None:
     seed_multi_unit(mock_modbus_unit, present=(3,))
     d = gw(mock_modbus_unit)
@@ -201,6 +315,10 @@ async def test_indoor_unit_writes(mock_modbus_unit: MockModbusUnit) -> None:
         await u.async_set_setpoint(22.5)
     with pytest.raises(UnsupportedValueError):
         await u.async_set_setpoint(31)
+    with pytest.raises(UnsupportedValueError):
+        await u.async_set_setpoint(math.nan)
+    with pytest.raises(UnsupportedValueError):
+        await u.async_set_setpoint(math.inf)
     with pytest.raises(UnsupportedValueError):
         await u.async_set_fan_speed(FanSpeed.AUTO)
 

@@ -11,6 +11,7 @@ from intesis_gw_modbus.single_unit.components import (
     Identity,
     Limits,
     Lock,
+    Status,
     Temperatures,
     Window,
 )
@@ -47,7 +48,7 @@ async def test_every_component_reads_only_documented_addresses(
     mock_modbus_unit: MockModbusUnit,
 ) -> None:
     seed_single_unit(mock_modbus_unit)
-    for cls in (Limits, Window, Lock, Identity, Diagnostics, Temperatures):
+    for cls in (Limits, Window, Lock, Identity, Diagnostics, Status, Temperatures):
         mock_modbus_unit.read_events.clear()
         await cls(mock_modbus_unit).async_update()
         covered = {

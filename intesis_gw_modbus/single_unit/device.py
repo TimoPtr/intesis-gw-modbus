@@ -35,11 +35,12 @@ from .components import (
     Identity,
     Limits,
     Lock,
+    Status,
     Temperatures,
     Window,
 )
 
-READINGS: Final = ("control", "limits", "window", "lock", "temperatures")
+READINGS: Final = ("control", "limits", "window", "lock", "temperatures", "status")
 """Sub-systems that change on their own and are polled every cycle."""
 
 SETTINGS: Final = ("diagnostics",)
@@ -93,6 +94,7 @@ class IntesisSingleUnitGateway(Device):
         self.lock = Lock(unit)
         self.identity = Identity(unit)
         self.diagnostics = Diagnostics(unit)
+        self.status = Status(unit)
         self.temperatures = Temperatures(unit)
 
     async def _async_setup(self) -> None:
@@ -240,11 +242,18 @@ class IntesisSingleUnitGateway(Device):
 
     async def async_set_setpoint(self, value: float) -> None:
         """Set the target temperature, within the unit's current limits."""
-        if not self.setpoint_min <= value <= self.setpoint_max:
+        raw = self._raw(value)
+        low = self.limits.setpoint_min
+        high = self.limits.setpoint_max
+        if low is None:
+            low = self._raw(DEFAULT_SETPOINT_MIN)
+        if high is None:
+            high = self._raw(DEFAULT_SETPOINT_MAX)
+        if not low <= raw <= high:
             raise UnsupportedValueError(
                 f"setpoint {value} is outside {self.setpoint_min}..{self.setpoint_max}"
             )
-        await self.control.write("setpoint", self._raw(value))
+        await self.control.write("setpoint", raw)
 
     # -- the rest of the single-unit surface -------------------------------
 
@@ -331,12 +340,12 @@ class IntesisSingleUnitGateway(Device):
     @property
     def undervoltage_hours(self) -> int | None:
         """Hours of under-voltage counted by the gateway."""
-        return self.diagnostics.undervoltage_hours
+        return self.status.undervoltage_hours
 
     @property
     def error_address(self) -> int | None:
         """The indoor unit number reporting the error (register 81)."""
-        return self.diagnostics.error_address
+        return self.status.error_address
 
     @property
     def max_fan_speeds(self) -> int | None:
