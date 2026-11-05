@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-05)
 
 - Single-unit gateways (`INMBSxxx001R000`): full register map, typed device,
   three temperature formats, brand auto-detection by device id.
