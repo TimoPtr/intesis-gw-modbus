@@ -67,4 +67,5 @@ jobs:
         run: |
           python -m venv /tmp/wheel-check
           /tmp/wheel-check/bin/pip install dist/*.whl
-          /tmp/wheel-check/bin/python -c "import intesis_gw_modbus; print(intesis_gw_modbus.__name__)"
+          # -I keeps the checkout off sys.path so the wheel's copy is what imports
+          /tmp/wheel-check/bin/python -I -c "import intesis_gw_modbus; print(intesis_gw_modbus.__file__)"

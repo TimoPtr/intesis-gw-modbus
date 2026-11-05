@@ -87,6 +87,20 @@ def test_from_celsius_rejects_non_finite(value: float, fmt: F) -> None:
         from_celsius(value, fmt)
 
 
+@pytest.mark.parametrize(
+    ("value", "fmt"),
+    [
+        (-3276.8, F.DECICELSIUS),  # would encode to the 0x8000 sentinel
+        (3300.0, F.DECICELSIUS),
+        (40000.0, F.CELSIUS),
+        (-40000.0, F.FAHRENHEIT),
+    ],
+)
+def test_from_celsius_rejects_values_outside_the_register(value: float, fmt: F) -> None:
+    with pytest.raises(UnsupportedValueError):
+        from_celsius(value, fmt)
+
+
 def test_setpoint_step() -> None:
     assert setpoint_step(F.DECICELSIUS) == 0.5
     assert setpoint_step(F.CELSIUS) == 1.0

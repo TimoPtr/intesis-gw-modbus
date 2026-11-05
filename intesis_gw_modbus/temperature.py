@@ -10,6 +10,9 @@ from .errors import UnsupportedValueError
 INIT_VALUE: Final = 0x8000
 """Raw value every data register holds while the gateway initialises."""
 
+_RAW_LIMIT: Final = 0x7FFF
+"""Largest magnitude a temperature register holds; 0x8000 is the sentinel."""
+
 _CELSIUS_RANGE: Final = range(16, 32)
 _FAHRENHEIT_RANGE: Final = range(60, 91)
 _DECICELSIUS_RANGE: Final = range(160, 311)
@@ -31,10 +34,14 @@ def from_celsius(value: float, fmt: TemperatureFormat) -> int:
     if not math.isfinite(value):
         raise UnsupportedValueError(f"temperature {value} is not a finite number")
     if fmt is TemperatureFormat.DECICELSIUS:
-        return round(value * 10)
-    if fmt is TemperatureFormat.FAHRENHEIT:
-        return round(value * 9 / 5 + 32)
-    return round(value)
+        raw = round(value * 10)
+    elif fmt is TemperatureFormat.FAHRENHEIT:
+        raw = round(value * 9 / 5 + 32)
+    else:
+        raw = round(value)
+    if not -_RAW_LIMIT <= raw <= _RAW_LIMIT:
+        raise UnsupportedValueError(f"temperature {value} does not fit the register")
+    return raw
 
 
 def detect_temperature_format(raw_setpoint: int | None) -> TemperatureFormat | None:

@@ -126,6 +126,8 @@ async def test_initialising_gateway_reads_none(
     )
     assert d.error is not None
     assert d.error.state is ErrorState.INITIALISING
+    assert d.control.baudrate_code is None
+    assert d.control.slave_address is None
     await d.async_set_setpoint(16.0)
     assert mock_modbus_unit.holding[4] == d._raw(16.0)
     with pytest.raises(UnsupportedValueError):

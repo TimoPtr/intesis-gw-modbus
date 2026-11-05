@@ -42,8 +42,8 @@ class Control(Component):
     alarm = boolean(10, nan=INIT_VALUE)
     error_code = integer(11, signed=False)
     window_timeout = integer(13, signed=False, nan=INIT_VALUE, writable=_minutes_0_30)
-    baudrate_code = integer(14, signed=False)
-    slave_address = integer(15, signed=False)
+    baudrate_code = integer(14, signed=False, nan=INIT_VALUE)
+    slave_address = integer(15, signed=False, nan=INIT_VALUE)
 
 
 class Limits(Component):

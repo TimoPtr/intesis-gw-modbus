@@ -11,6 +11,7 @@ from modbus_connection import (
     IllegalFunctionError,
     ModbusConnectionError,
     ModbusError,
+    ModbusTimeoutError,
     ModbusUnit,
 )
 from modbus_connection.model import ComponentGroup, Device, Raw, UpdateReport
@@ -253,10 +254,12 @@ class IntesisMultiUnitGateway(Device):
         self._adopt(present)
 
     def _adopt(self, components: Iterable[IndoorUnit]) -> None:
-        """Add indoor units and rebuild the pooled read over all of them."""
+        """Add indoor units, in place so saved references see them, and re-pool."""
         for component in components:
             self.indoor_units[component.number] = IndoorUnitView(component, self.brand)
-        self.indoor_units = dict(sorted(self.indoor_units.items()))
+        ordered = sorted(self.indoor_units.items())
+        self.indoor_units.clear()
+        self.indoor_units.update(ordered)
         self.units = ComponentGroup(
             self.modbus_unit, [view.component for view in self.indoor_units.values()]
         )
@@ -267,17 +270,42 @@ class IntesisMultiUnitGateway(Device):
 
         Each unit's block is read on its own, so one failing block only marks
         that unit unreachable; ``units`` counts as updated when any answered.
-        Then re-probe the next few empty blocks; a unit that has come online
-        since setup joins ``indoor_units`` and is polled from now on.
+        A status timeout alone does not stop the unit reads; the timeout is
+        raised only when nothing answered at all. Then re-probe the next few
+        empty blocks; a unit that has come online since setup joins
+        ``indoor_units`` and is polled from now on. A dead link marks every
+        known unit unreachable before the error propagates.
         """
-        report = await self.async_poll(("status",))
-        await self._async_update_units(report)
-        await self._async_rediscover()
+        await self.async_ensure_setup()
+        report = UpdateReport()
+        known = list(self.indoor_units.values())
+        try:
+            try:
+                await self.async_poll(("status",), report)
+            except ModbusTimeoutError as err:
+                report.failed["status"] = err
+            failures = await self._async_update_units(known)
+            found = await self._async_rediscover()
+        except ModbusConnectionError:
+            self._mark_unreachable(known)
+            raise
+        answered = len(failures) < len(known) or bool(found)
+        status_timeout = report.failed.get("status")
+        if not answered and isinstance(status_timeout, ModbusTimeoutError):
+            raise status_timeout
+        if answered:
+            report.updated.add("units")
+        else:
+            report.failed["units"] = failures[0]
+        for view in known:
+            view.component.notify()
         return report
 
-    async def _async_update_units(self, report: UpdateReport) -> None:
+    async def _async_update_units(
+        self, views: list[IndoorUnitView]
+    ) -> list[ModbusError]:
         failures: list[ModbusError] = []
-        for view in self.indoor_units.values():
+        for view in views:
             try:
                 await view.component.async_update(notify=False)
             except ModbusConnectionError:
@@ -287,26 +315,27 @@ class IntesisMultiUnitGateway(Device):
                 failures.append(err)
             else:
                 view.reachable = True
-        if len(failures) == len(self.indoor_units):
-            report.failed["units"] = failures[0]
-            return
-        report.updated.add("units")
-        for view in self.indoor_units.values():
+        return failures
+
+    def _mark_unreachable(self, views: list[IndoorUnitView]) -> None:
+        for view in views:
+            view.reachable = False
             view.component.notify()
 
-    async def _async_rediscover(self) -> None:
+    async def _async_rediscover(self) -> list[IndoorUnit]:
+        """Probe the next empty blocks; a block leaves the queue once its read completed."""
         found: list[IndoorUnit] = []
         try:
             for _ in range(min(REDISCOVERY_BATCH, len(self._empty))):
-                component = self._empty.popleft()
+                component = self._empty[0]
                 try:
                     await component.async_update()
                 except ModbusConnectionError:
-                    self._empty.appendleft(component)
                     raise
                 except ModbusError:
-                    self._empty.append(component)
+                    self._empty.rotate(-1)
                     continue
+                self._empty.popleft()
                 if component.comm_error is False:
                     found.append(component)
                 else:
@@ -314,6 +343,7 @@ class IntesisMultiUnitGateway(Device):
         finally:
             if found:
                 self._adopt(found)
+        return found
 
     async def async_read_raw(self, names: Iterable[str] = POLLED) -> Raw:
         """Every register this device reads, undecoded, for diagnostics."""

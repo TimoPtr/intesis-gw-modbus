@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """The multi-unit gateway device."""
 
+import asyncio
 import math
 
 import pytest
@@ -217,6 +218,8 @@ async def test_every_block_failing_marks_units_failed(
     seed_multi_unit(mock_modbus_unit, present=(0, 1))
     d = gw(mock_modbus_unit)
     await d.async_update()
+    notified: list[int] = []
+    d.indoor_units[0].component.add_update_listener(lambda: notified.append(0))
     mock_modbus_unit.fail_read(0, ServerDeviceFailureError())
     mock_modbus_unit.fail_read(20, ModbusTimeoutError())
     report = await d.async_update()
@@ -224,6 +227,94 @@ async def test_every_block_failing_marks_units_failed(
     assert isinstance(report.failed["units"], ServerDeviceFailureError)
     assert d.indoor_units[0].present is False
     assert d.indoor_units[1].present is False
+    assert notified == [0]
+
+
+async def test_status_timeout_still_polls_units(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.holding[3] = 25
+    mock_modbus_unit.fail_read(2994, ModbusTimeoutError())
+    report = await d.async_update()
+    assert report.updated == {"units"}
+    assert isinstance(report.failed["status"], ModbusTimeoutError)
+    assert d.indoor_units[0].setpoint == 25
+    assert d.hw_comm_ok is True  # last good reading kept
+
+
+async def test_saved_indoor_units_reference_sees_new_units(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    saved = d.indoor_units
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[5 * 20 + offset] = value
+    for _ in range(_sweeps()):
+        await d.async_update()
+    assert saved is d.indoor_units
+    assert list(saved) == [0, 5]
+
+
+async def test_discovery_clears_units_failure(mock_modbus_unit: MockModbusUnit) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.fail_read(0, ServerDeviceFailureError())
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[20 + offset] = value
+    report = None
+    for _ in range(_sweeps()):
+        report = await d.async_update()
+        if 1 in d.indoor_units:
+            break
+    assert report is not None
+    assert "units" in report.updated
+    assert "units" not in report.failed
+
+
+async def test_dead_link_marks_known_units_unreachable(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    notified: list[int] = []
+    d.indoor_units[1].component.add_update_listener(lambda: notified.append(1))
+    mock_modbus_unit.fail_read(2994, ModbusConnectionError())
+    with pytest.raises(ModbusConnectionError):
+        await d.async_update()
+    assert d.indoor_units[0].present is False
+    assert d.indoor_units[1].present is False
+    assert notified == [1]
+    mock_modbus_unit.fail_read(2994, None)
+    await d.async_update()
+    assert d.indoor_units[0].present is True
+
+
+async def test_cancelled_probe_keeps_block_queued(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    for offset, value in INDOOR_UNIT_BLOCK.items():
+        mock_modbus_unit.holding[20 + offset] = value
+    mock_modbus_unit.fail_read(20, asyncio.CancelledError())  # type: ignore[arg-type]
+
+    async def sweep() -> None:
+        for _ in range(_sweeps()):
+            await d.async_update()
+
+    with pytest.raises(asyncio.CancelledError):
+        await sweep()
+    mock_modbus_unit.fail_read(20, None)
+    await sweep()
+    assert 1 in d.indoor_units
 
 
 async def test_silent_gateway_raises_timeout(mock_modbus_unit: MockModbusUnit) -> None:
