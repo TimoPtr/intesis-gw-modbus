@@ -37,6 +37,12 @@ single-unit gateways are documented the same way but have not been checked.
   (2400 to 115200); SW4 also sets the temperature format (x1 °C, x10 °C or °F)
   and switches in the on-board 120 Ω termination. Every DIP change needs a
   power cycle.
+- SW1 sets the gateway's role on the air conditioner's XY bus: slave by
+  default, which needs an MHI wired remote controller acting as master, or
+  master, with any remote controller set as slave. Register 98 exposes the
+  same role (`is_master`, `async_set_master`); the manual does not say which
+  wins after a power cycle. As master the external temperature reference is
+  applied directly; as slave the gateway shifts the setpoint to compensate.
 - Function codes 3, 4, 6 and 16, with 16 limited to one register per request.
   A block read must not touch an undefined address, so the library reads the
   documented blocks only, one request each.
