@@ -91,8 +91,10 @@ that need a real unit.
   when none answers (the caller retries). Each poll reads every known unit's
   block on its own: a failed block marks that unit not `present` while the
   others refresh, and `units` fails only when every block failed. A status
-  timeout alone does not stop the unit reads; a dead link marks every known
-  unit unreachable before the error propagates. Each update
+  timeout alone does not stop the unit reads, but two timeouts in a row end
+  the poll (a silent gateway must not cost one timeout per unit) and mark the
+  unread units unreachable; a dead link marks every known unit unreachable
+  before the error propagates. Overlapping updates are serialised. Each update
   re-probes `REDISCOVERY_BATCH` empty or refused blocks round-robin, so late
   units join `indoor_units`; a unit that drops out stays listed with `present`
   false and every reading `None`.

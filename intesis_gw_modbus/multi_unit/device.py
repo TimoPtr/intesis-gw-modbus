@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Timothy (TimoPtr)
 """The multi-unit gateway as a typed device, one view per indoor unit."""
 
+import asyncio
 import math
 from collections import deque
 from collections.abc import Iterable, Mapping
@@ -46,6 +47,9 @@ REDISCOVERY_BATCH: Final = 8
 """Empty blocks re-probed after each poll, round-robin, so late units appear."""
 
 _REQUIRED_TIMEOUT: Final = 3.0
+
+_SILENCE_BUDGET: Final = 2
+"""Timeouts in a row after which the gateway counts as silent for this poll."""
 
 
 def _whole_setpoint(value: float) -> int:
@@ -222,6 +226,7 @@ class IntesisMultiUnitGateway(Device):
         self.units: ComponentGroup | None = None  # built by setup
         self.indoor_units: dict[int, IndoorUnitView] = {}
         self._empty: deque[IndoorUnit] = deque()
+        self._update_lock = asyncio.Lock()
 
     async def _async_setup(self) -> None:
         """
@@ -270,52 +275,73 @@ class IntesisMultiUnitGateway(Device):
 
         Each unit's block is read on its own, so one failing block only marks
         that unit unreachable; ``units`` counts as updated when any answered.
-        A status timeout alone does not stop the unit reads; the timeout is
-        raised only when nothing answered at all. Then re-probe the next few
-        empty blocks; a unit that has come online since setup joins
+        A status timeout alone does not stop the unit reads, but two timeouts
+        in a row mean the gateway went silent: the poll stops there, the
+        units not read yet are marked unreachable, and the timeout is raised
+        when nothing answered at all. Then re-probe the next few empty
+        blocks; a unit that has come online since setup joins
         ``indoor_units`` and is polled from now on. A dead link marks every
-        known unit unreachable before the error propagates.
+        known unit unreachable before the error propagates. Overlapping
+        calls run one after the other.
         """
+        async with self._update_lock:
+            return await self._async_update()
+
+    async def _async_update(self) -> UpdateReport:
         await self.async_ensure_setup()
         report = UpdateReport()
         known = list(self.indoor_units.values())
+        status_timeout: ModbusTimeoutError | None = None
         try:
             try:
                 await self.async_poll(("status",), report)
             except ModbusTimeoutError as err:
-                report.failed["status"] = err
-            failures = await self._async_update_units(known)
-            found = await self._async_rediscover()
+                report.failed["status"] = status_timeout = err
+            answered, failures, silent = await self._async_update_units(
+                known, timeouts=0 if status_timeout is None else 1
+            )
+            found = [] if silent else await self._async_rediscover()
         except ModbusConnectionError:
             self._mark_unreachable(known)
             raise
-        answered = len(failures) < len(known) or bool(found)
-        status_timeout = report.failed.get("status")
-        if not answered and isinstance(status_timeout, ModbusTimeoutError):
+        for view in known:
+            view.component.notify()
+        if silent and status_timeout is not None and not answered:
             raise status_timeout
-        if answered:
+        if answered or found:
             report.updated.add("units")
         else:
             report.failed["units"] = failures[0]
-        for view in known:
-            view.component.notify()
         return report
 
     async def _async_update_units(
-        self, views: list[IndoorUnitView]
-    ) -> list[ModbusError]:
+        self, views: list[IndoorUnitView], *, timeouts: int
+    ) -> tuple[int, list[ModbusError], bool]:
+        """Read each unit; return how many answered, the failures, and silence."""
+        answered = 0
         failures: list[ModbusError] = []
-        for view in views:
+        for index, view in enumerate(views):
             try:
                 await view.component.async_update(notify=False)
             except ModbusConnectionError:
                 raise
+            except ModbusTimeoutError as err:
+                view.reachable = False
+                failures.append(err)
+                timeouts += 1
+                if timeouts >= _SILENCE_BUDGET:
+                    for unread in views[index + 1 :]:
+                        unread.reachable = False
+                    return answered, failures, True
             except ModbusError as err:
                 view.reachable = False
                 failures.append(err)
+                timeouts = 0
             else:
                 view.reachable = True
-        return failures
+                answered += 1
+                timeouts = 0
+        return answered, failures, False
 
     def _mark_unreachable(self, views: list[IndoorUnitView]) -> None:
         for view in views:
@@ -332,6 +358,9 @@ class IntesisMultiUnitGateway(Device):
                     await component.async_update()
                 except ModbusConnectionError:
                     raise
+                except ModbusTimeoutError:
+                    self._empty.rotate(-1)
+                    break  # do not spend a timeout per block on a slow bus
                 except ModbusError:
                     self._empty.rotate(-1)
                     continue

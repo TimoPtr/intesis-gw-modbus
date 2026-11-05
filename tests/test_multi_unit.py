@@ -17,6 +17,7 @@ from modbus_connection.mock import MockModbusUnit, WriteEvent
 from intesis_gw_modbus.brands.mhi import MHI
 from intesis_gw_modbus.enums import FanSpeed, Mode, VanePosition
 from intesis_gw_modbus.errors import NoIndoorUnitsError, UnsupportedValueError
+from intesis_gw_modbus.multi_unit.components import IndoorUnit
 from intesis_gw_modbus.multi_unit.device import (
     REDISCOVERY_BATCH,
     IntesisMultiUnitGateway,
@@ -315,6 +316,101 @@ async def test_cancelled_probe_keeps_block_queued(
     mock_modbus_unit.fail_read(20, None)
     await sweep()
     assert 1 in d.indoor_units
+
+
+async def test_overlapping_updates_do_not_drop_blocks(
+    mock_modbus_unit: MockModbusUnit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    original = IndoorUnit.async_update
+
+    async def slow_update(self: IndoorUnit, *, notify: bool = True) -> None:
+        await asyncio.sleep(0)  # let the other update run, like real bus I/O
+        await original(self, notify=notify)
+
+    monkeypatch.setattr(IndoorUnit, "async_update", slow_update)
+    for _ in range(_sweeps()):
+        await asyncio.gather(d.async_update(), d.async_update())
+    queued = sorted(c.number for c in d._empty)
+    assert queued == list(range(1, 48))
+
+
+async def test_silent_gateway_notifies_before_raising(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    notified: list[int] = []
+    d.indoor_units[0].component.add_update_listener(lambda: notified.append(0))
+    mock_modbus_unit.fail_requests(ModbusTimeoutError())
+    with pytest.raises(ModbusTimeoutError):
+        await d.async_update()
+    assert d.indoor_units[0].present is False
+    assert notified == [0]
+
+
+async def test_silent_gateway_gives_up_after_two_timeouts(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1, 2, 3, 7))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.read_events.clear()
+    mock_modbus_unit.fail_requests(ModbusTimeoutError())
+    with pytest.raises(ModbusTimeoutError):
+        await d.async_update()
+    assert len(mock_modbus_unit.read_events) == 2  # the status, then one unit
+    assert not any(view.present for view in d.indoor_units.values())
+
+
+async def test_link_dying_mid_poll_spares_the_remaining_reads(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1, 2, 3, 7))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.read_events.clear()
+    mock_modbus_unit.fail_read(20, ModbusTimeoutError())
+    mock_modbus_unit.fail_read(40, ModbusTimeoutError())
+    report = await d.async_update()
+    assert report.updated == {"status", "units"}
+    assert [e.address for e in mock_modbus_unit.read_events] == [2994, 0, 20, 40]
+    assert d.indoor_units[0].present is True
+    assert not any(d.indoor_units[n].present for n in (1, 2, 3, 7))
+
+
+async def test_isolated_timeout_does_not_stop_the_poll(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0, 1, 2))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    mock_modbus_unit.fail_read(20, ModbusTimeoutError())
+    report = await d.async_update()
+    assert report.updated == {"status", "units"}
+    assert d.indoor_units[0].present is True
+    assert d.indoor_units[1].present is False
+    assert d.indoor_units[2].present is True
+
+
+async def test_probe_timeout_ends_rediscovery_for_this_poll(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    head = d._empty[0].number
+    mock_modbus_unit.fail_read(head * 20, ModbusTimeoutError())
+    mock_modbus_unit.read_events.clear()
+    await d.async_update()
+    assert [e.address for e in mock_modbus_unit.read_events] == [2994, 0, head * 20]
+    mock_modbus_unit.fail_read(head * 20, None)
+    for _ in range(_sweeps()):
+        await d.async_update()
+    assert sorted(c.number for c in d._empty) == list(range(1, 48))
 
 
 async def test_silent_gateway_raises_timeout(mock_modbus_unit: MockModbusUnit) -> None:
