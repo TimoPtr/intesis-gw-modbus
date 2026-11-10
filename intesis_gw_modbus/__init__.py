@@ -21,6 +21,7 @@ from .errors import (
 )
 from .models import KNOWN_DEVICE_IDS, MODELS, GatewayModel, model_for_device_id
 from .multi_unit.device import IndoorUnitView, IntesisMultiUnitGateway
+from .probe import GatewayProbe, async_probe_gateway
 from .single_unit.device import IntesisSingleUnitGateway
 from .temperature import INIT_VALUE, detect_temperature_format
 
@@ -37,6 +38,7 @@ __all__ = [
     "FanSpeed",
     "GatewayFamily",
     "GatewayModel",
+    "GatewayProbe",
     "IndoorUnitView",
     "IntesisError",
     "IntesisMultiUnitGateway",
@@ -47,6 +49,7 @@ __all__ = [
     "UnsupportedValueError",
     "VanePosition",
     "WrongGatewayError",
+    "async_probe_gateway",
     "brand_for_device_id",
     "detect_temperature_format",
     "model_for_device_id",

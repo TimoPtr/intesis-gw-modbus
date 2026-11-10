@@ -121,6 +121,14 @@ Every temperature the library returns or accepts is in degrees Celsius,
 whatever the gateway's DIP-switch format. `detect_temperature_format(raw)`
 infers the format from a raw setpoint register when it is not known.
 
+`async_probe_gateway(unit)` identifies a gateway before you build a device for
+it. The returned `GatewayProbe` holds the single-unit `model` its device id
+belongs to, the `unsupported_brand` of a documented gateway that has no table
+yet, the detected `temperature_format`, and `vane_reported`, a hint that the
+unit has a vane. Only single-unit gateways can be identified this way: a
+multi-unit gateway keeps indoor unit readings at the same addresses, so it
+comes back with no `model` and nothing else is read from it.
+
 A multi-unit gateway is `IntesisMultiUnitGateway(unit, brand=..., unit_count=48)`;
 after the first `async_update()` its `indoor_units` dict holds one
 `IndoorUnitView` per unit the gateway talks to. Each unit's block is read on

@@ -15,4 +15,6 @@ def test_key_names_present() -> None:
         "IntesisMultiUnitGateway",
         "MODELS",
         "detect_temperature_format",
+        "async_probe_gateway",
+        "GatewayProbe",
     } <= set(lib.__all__)
