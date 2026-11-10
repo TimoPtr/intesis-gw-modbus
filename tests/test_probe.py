@@ -10,8 +10,10 @@ from modbus_connection import (
 )
 from modbus_connection.mock import MockModbusUnit
 
+from intesis_gw_modbus.brands import BRANDS
 from intesis_gw_modbus.enums import TemperatureFormat
-from intesis_gw_modbus.models import MODELS
+from intesis_gw_modbus.errors import COMM_ERROR_CODE, INIT_ERROR_CODE
+from intesis_gw_modbus.models import KNOWN_DEVICE_IDS, MODELS
 from intesis_gw_modbus.probe import GatewayProbe, async_probe_gateway
 
 from .conftest import (
@@ -156,3 +158,40 @@ async def test_vane_at_init_value_is_not_reported(
     mock_modbus_unit.holding[3] = 0x8000
     probe = await async_probe_gateway(mock_modbus_unit)
     assert not probe.vane_reported
+
+
+def test_no_error_code_is_a_device_id() -> None:
+    """
+    Register 49 of a multi-unit gateway holds indoor unit 2's error code.
+
+    The probe tells the families apart by that value alone, so no error code
+    a multi-unit gateway can report may equal a single-unit device id.
+    """
+    device_ids = {
+        *KNOWN_DEVICE_IDS,
+        *(brand.device_id for brand in BRANDS.values()),
+    }
+    error_codes = {0, INIT_ERROR_CODE, COMM_ERROR_CODE}
+    for brand in BRANDS.values():
+        error_codes |= set(brand.errors)
+    assert not device_ids & error_codes
+
+
+async def test_probe_asks_for_the_gateway_timing(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """The probe runs before a device exists to ask for the timing itself."""
+    seed_single_unit(mock_modbus_unit)
+    await async_probe_gateway(mock_modbus_unit)
+    assert mock_modbus_unit.required_timeout == 3.0
+    assert mock_modbus_unit.message_spacing == 0.02
+
+
+async def test_probe_does_not_space_requests_to_another_family(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """The spacing is a single-unit need, so only a single-unit gateway gets it."""
+    seed_multi_unit(mock_modbus_unit, present=(0,))
+    await async_probe_gateway(mock_modbus_unit)
+    assert mock_modbus_unit.required_timeout == 3.0
+    assert mock_modbus_unit.message_spacing == 0.0

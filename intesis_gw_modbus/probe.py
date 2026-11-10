@@ -8,6 +8,7 @@ from modbus_connection import IllegalDataAddressError, IllegalFunctionError, Mod
 
 from .enums import TemperatureFormat
 from .models import KNOWN_DEVICE_IDS, GatewayModel, model_for_device_id
+from .single_unit.device import _MESSAGE_SPACING, _REQUIRED_TIMEOUT
 from .temperature import detect_temperature_format
 
 # Same addresses as single_unit.components
@@ -26,7 +27,8 @@ class GatewayProbe:
 
     Only a single-unit gateway keeps its device id there. On a multi-unit
     gateway the address is indoor unit 2's error code, so a value no model
-    claims identifies nothing.
+    claims identifies nothing. No error code of a brand table equals a device
+    id, which is what lets this one register tell the families apart.
     """
 
     model: GatewayModel | None
@@ -68,7 +70,10 @@ async def async_probe_gateway(unit: ModbusUnit) -> GatewayProbe:
     A register the gateway does not have reads as absent. Any other failure,
     a busy or silent gateway included, propagates as a ``ModbusError`` so the
     caller can retry.
+
+    Asks for the timing the device would ask for, since the probe runs first.
     """
+    unit.require_timeout(_REQUIRED_TIMEOUT)
     device_id = await _async_read_or_none(unit, _DEVICE_ID_REGISTER)
     model = None if device_id is None else model_for_device_id(device_id)
     if model is None:
@@ -81,6 +86,7 @@ async def async_probe_gateway(unit: ModbusUnit) -> GatewayProbe:
             temperature_format=None,
             vane_reported=False,
         )
+    unit.set_message_spacing(_MESSAGE_SPACING)
     raw_setpoint = await _async_read_or_none(unit, _SETPOINT_REGISTER)
     raw_vane = await _async_read_or_none(unit, _VANE_REGISTER)
     return GatewayProbe(
