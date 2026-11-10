@@ -14,7 +14,11 @@ from intesis_gw_modbus.enums import TemperatureFormat
 from intesis_gw_modbus.models import MODELS
 from intesis_gw_modbus.probe import GatewayProbe, async_probe_gateway
 
-from .conftest import seed_initialising_single_unit, seed_single_unit
+from .conftest import (
+    seed_initialising_single_unit,
+    seed_multi_unit,
+    seed_single_unit,
+)
 
 MHI_SINGLE = MODELS["INMBSMHI001R000"]
 
@@ -28,7 +32,7 @@ async def test_probe_identifies_single_unit_gateway(
         model=MHI_SINGLE,
         unsupported_brand=None,
         temperature_format=TemperatureFormat.DECICELSIUS,
-        raw_vane=10,
+        vane_reported=True,
     )
 
 
@@ -57,7 +61,7 @@ async def test_probe_of_initialising_gateway(mock_modbus_unit: MockModbusUnit) -
     probe = await async_probe_gateway(mock_modbus_unit)
     assert probe.model is MHI_SINGLE
     assert probe.temperature_format is None
-    assert not probe.reports_vane()
+    assert not probe.vane_reported
 
 
 async def test_probe_names_brand_without_table(
@@ -81,19 +85,51 @@ async def test_probe_of_unknown_device_id(mock_modbus_unit: MockModbusUnit) -> N
 
 
 @pytest.mark.parametrize("error", [IllegalDataAddressError, IllegalFunctionError])
-async def test_probe_treats_missing_registers_as_absent(
+async def test_probe_treats_missing_device_id_as_absent(
     mock_modbus_unit: MockModbusUnit, error: type[Exception]
 ) -> None:
-    """A multi-unit gateway has none of these registers."""
-    for address in (49, 4, 3):
-        mock_modbus_unit.fail_read(address, error())
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.fail_read(49, error())
     assert await async_probe_gateway(mock_modbus_unit) == GatewayProbe(
         device_id=None,
         model=None,
         unsupported_brand=None,
         temperature_format=None,
-        raw_vane=None,
+        vane_reported=False,
     )
+
+
+@pytest.mark.parametrize("error", [IllegalDataAddressError, IllegalFunctionError])
+async def test_probe_treats_missing_setpoint_and_vane_as_unknown(
+    mock_modbus_unit: MockModbusUnit, error: type[Exception]
+) -> None:
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.fail_read(4, error())
+    mock_modbus_unit.fail_read(3, error())
+    probe = await async_probe_gateway(mock_modbus_unit)
+    assert probe.model is MHI_SINGLE
+    assert probe.temperature_format is None
+    assert not probe.vane_reported
+
+
+async def test_probe_does_not_read_indoor_unit_registers_as_gateway_data(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """
+    On a multi-unit gateway the probed addresses belong to indoor units.
+
+    Register 49 is indoor unit 2's error code there, and 3 and 4 are unit 0's
+    setpoint and fan speed, so nothing past the device id may be interpreted.
+    """
+    seed_multi_unit(mock_modbus_unit, present=(0, 2))
+    assert await async_probe_gateway(mock_modbus_unit) == GatewayProbe(
+        device_id=0,
+        model=None,
+        unsupported_brand=None,
+        temperature_format=None,
+        vane_reported=False,
+    )
+    assert [event.address for event in mock_modbus_unit.read_events] == [49]
 
 
 @pytest.mark.parametrize("address", [49, 4, 3])
@@ -113,22 +149,10 @@ async def test_probe_propagates_silence(mock_modbus_unit: MockModbusUnit) -> Non
         await async_probe_gateway(mock_modbus_unit)
 
 
-async def test_reports_vane(mock_modbus_unit: MockModbusUnit) -> None:
-    seed_single_unit(mock_modbus_unit)
-    probe = await async_probe_gateway(mock_modbus_unit)
-    assert probe.reports_vane()
-    mock_modbus_unit.holding[3] = 0x8000
-    probe = await async_probe_gateway(mock_modbus_unit)
-    assert not probe.reports_vane()
-
-
-async def test_reports_vane_for_a_model_the_caller_names(
+async def test_vane_at_init_value_is_not_reported(
     mock_modbus_unit: MockModbusUnit,
 ) -> None:
-    """Without a device id the caller says which model's vane codes apply."""
     seed_single_unit(mock_modbus_unit)
-    mock_modbus_unit.fail_read(49, IllegalDataAddressError())
+    mock_modbus_unit.holding[3] = 0x8000
     probe = await async_probe_gateway(mock_modbus_unit)
-    assert probe.model is None
-    assert not probe.reports_vane()
-    assert probe.reports_vane(MHI_SINGLE)
+    assert not probe.vane_reported

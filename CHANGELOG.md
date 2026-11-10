@@ -5,8 +5,9 @@
 - `async_probe_gateway(unit)` identifies a gateway before a device is built
   for it: the model its device id belongs to, the brand of a documented
   gateway without a table, the temperature format and whether a vane position
-  was reported. A register the gateway does not have reads as absent; a busy
-  or silent gateway raises so the caller can retry.
+  was reported. Only single-unit gateways are identified; a multi-unit
+  gateway comes back with no model. A register the gateway does not have
+  reads as absent; a busy or silent gateway raises so the caller can retry.
 
 ## 0.1.0 (2026-11-05)
 

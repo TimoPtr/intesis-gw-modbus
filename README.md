@@ -124,9 +124,10 @@ infers the format from a raw setpoint register when it is not known.
 `async_probe_gateway(unit)` identifies a gateway before you build a device for
 it. The returned `GatewayProbe` holds the single-unit `model` its device id
 belongs to, the `unsupported_brand` of a documented gateway that has no table
-yet, the detected `temperature_format`, and `reports_vane()`, a hint that the
-unit has a vane. A multi-unit gateway has none of the probed registers, so
-every field is `None` for it.
+yet, the detected `temperature_format`, and `vane_reported`, a hint that the
+unit has a vane. Only single-unit gateways can be identified this way: a
+multi-unit gateway keeps indoor unit readings at the same addresses, so it
+comes back with no `model` and nothing else is read from it.
 
 A multi-unit gateway is `IntesisMultiUnitGateway(unit, brand=..., unit_count=48)`;
 after the first `async_update()` its `indoor_units` dict holds one
