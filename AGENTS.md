@@ -40,7 +40,8 @@ that need a real unit.
   `mhi.py` is the reference). Brand data is data, never code; see
   `docs/adding-a-brand.md`.
 - `models.py`: part numbers in `MODELS`, device ids of brands without a table
-  in `KNOWN_DEVICE_IDS`, `model_for_device_id`.
+  in `KNOWN_DEVICE_IDS`, `model_for_device_id`. `probe.py`:
+  `async_probe_gateway`, what a config flow asks before it knows the model.
 - `single_unit/`: `INMBSxxx001R000` (`components.py` registers, `device.py`
   `IntesisSingleUnitGateway`). `multi_unit/`: `INMBSxxx048O000` / `128O000`
   (`IndoorUnitView` per unit, `IntesisMultiUnitGateway`).
