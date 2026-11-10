@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-10)
 
 - `async_probe_gateway(unit)` identifies a gateway before a device is built
   for it: the model its device id belongs to, the brand of a documented
