@@ -109,7 +109,9 @@ class IntesisSingleUnitGateway(Device):
 
     async def async_update_readings(self) -> UpdateReport:
         """Refresh what the unit reports and does."""
-        return await self.async_poll(READINGS)
+        report = await self.async_poll(READINGS)
+        self._follow_temperature_format()
+        return report
 
     async def async_update_settings(self) -> UpdateReport:
         """Refresh the gateway's own behaviour switches and counters."""
@@ -118,7 +120,19 @@ class IntesisSingleUnitGateway(Device):
     async def async_update(self) -> UpdateReport:
         """Refresh every polled sub-system."""
         report = await self.async_poll(READINGS)
+        self._follow_temperature_format()
         return await self.async_poll(SETTINGS, report)
+
+    def _follow_temperature_format(self) -> None:
+        """
+        Read and write in the format the gateway's DIP switches select now.
+
+        The format given at construction only serves until the gateway reports
+        a setpoint, which is what the format is detected from.
+        """
+        detected = self.detected_temperature_format
+        if detected is not None:
+            self.temperature_format = detected
 
     async def async_read_raw(self, names: Iterable[str] = ALL) -> Raw:
         """Every register this device reads, undecoded, for diagnostics."""
@@ -284,7 +298,7 @@ class IntesisSingleUnitGateway(Device):
 
     @property
     def detected_temperature_format(self) -> TemperatureFormat | None:
-        """The format the raw setpoint implies, to catch a DIP-switch change."""
+        """The format the raw setpoint implies, ``None`` while there is none."""
         return detect_temperature_format(self.control.setpoint)
 
     @property
