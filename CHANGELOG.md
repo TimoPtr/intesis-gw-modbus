@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-16)
 
 - A single-unit gateway now follows the temperature format its DIP switches
   select: after each poll of the readings, `temperature_format` is set to the
