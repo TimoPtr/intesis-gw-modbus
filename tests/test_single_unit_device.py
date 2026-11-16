@@ -407,3 +407,34 @@ async def test_fan_speed_sets_follow_register_21(
     mock_modbus_unit.on_write(writes.append)
     await d.async_set_fan_speed(FanSpeed.HIGH)
     assert [(w.address, w.values[0]) for w in writes] == [(2, count)]
+
+
+@pytest.mark.parametrize("poll", ["async_update", "async_update_readings"])
+async def test_temperature_format_follows_the_dip_switches(
+    mock_modbus_unit: MockModbusUnit, poll: str
+) -> None:
+    """A gateway switched to whole degrees is read and written in whole degrees."""
+    seed_single_unit(mock_modbus_unit)
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    for address, value in {4: 22, 5: 20, 23: 22, 24: 30, 25: 16}.items():
+        mock_modbus_unit.holding[address] = value
+    await getattr(d, poll)()
+    assert d.temperature_format is TemperatureFormat.CELSIUS
+    assert d.setpoint == 22.0
+    assert d.current_temperature == 20.0
+    assert d.setpoint_step == 1.0
+    await d.async_set_setpoint(24.0)
+    assert mock_modbus_unit.holding[4] == 24
+
+
+async def test_temperature_format_is_kept_while_initialising(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """With no setpoint to detect from, the format given at construction stays."""
+    seed_initialising_single_unit(mock_modbus_unit)
+    d = IntesisSingleUnitGateway(
+        mock_modbus_unit, brand=MHI, temperature_format=TemperatureFormat.CELSIUS
+    )
+    await d.async_update()
+    assert d.temperature_format is TemperatureFormat.CELSIUS

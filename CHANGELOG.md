@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- A single-unit gateway now follows the temperature format its DIP switches
+  select: after each poll of the readings, `temperature_format` is set to the
+  format detected from the setpoint register. The format passed to the
+  constructor only serves until the gateway reports a setpoint, so a caller no
+  longer has to compare `detected_temperature_format` itself.
+
 ## 0.2.0 (2026-11-10)
 
 - `async_probe_gateway(unit)` identifies a gateway before a device is built

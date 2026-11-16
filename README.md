@@ -119,7 +119,10 @@ asyncio.run(main())
 
 Every temperature the library returns or accepts is in degrees Celsius,
 whatever the gateway's DIP-switch format. `detect_temperature_format(raw)`
-infers the format from a raw setpoint register when it is not known.
+infers the format from a raw setpoint register when it is not known. A
+single-unit device applies the detected format after every poll, so the
+`temperature_format` you construct it with only serves until the gateway
+reports a setpoint, and a DIP-switch change is picked up by itself.
 
 `async_probe_gateway(unit)` identifies a gateway before you build a device for
 it. The returned `GatewayProbe` holds the single-unit `model` its device id
