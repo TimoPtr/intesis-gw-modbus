@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 (2026-11-25)
+
+Both fixes follow from reading an INMBSMHI001R000 while it initialises.
+
+- `operation_hours` of a single-unit gateway no longer reads as `None` at
+  exactly 32768 hours. The counter covers the whole register and keeps its
+  value while the gateway initialises.
+- While a single-unit gateway initialises, `power`, `mode`, `fan_speed`,
+  `alarm` and `control_lock` are `None`. The gateway reads placeholders for
+  them during those two minutes (off, auto, an alarm) that are not the state
+  of the unit.
+
 ## 0.3.0 (2026-11-16)
 
 - A single-unit gateway now follows the temperature format its DIP switches

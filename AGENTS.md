@@ -74,9 +74,13 @@ that need a real unit.
   ranges only, one request each (`register_ranges`). Writes are single
   registers; function 16 is limited to one register on the single-unit gateway
   and absent on the multi-unit one.
-- Data registers hold `INIT_VALUE` (0x8000) while the gateway initialises;
-  declare `nan=INIT_VALUE` on every field that can show it so readings become
-  `None` instead of garbage.
+- Temperature registers hold `INIT_VALUE` (0x8000) while the gateway
+  initialises; declare `nan=INIT_VALUE` on every field that can show it so
+  readings become `None` instead of garbage. Never declare it on a field
+  whose range includes 0x8000, such as the operation hours. On the
+  single-unit gateway the state registers read valid-looking placeholders
+  meanwhile (off, auto, an alarm), which the device withholds while the error
+  code says it initialises.
 - Timing defaults (`_REQUIRED_TIMEOUT`, `_MESSAGE_SPACING`) are conservative
   guesses derived from the bus parameters, not measurements.
 

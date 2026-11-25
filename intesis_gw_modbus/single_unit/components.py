@@ -38,7 +38,9 @@ class Control(Component):
     window_contact = boolean(6, nan=INIT_VALUE, writable=True)
     gateway_disabled = boolean(7, nan=INIT_VALUE, writable=True)
     remote_control_disabled = boolean(8, nan=INIT_VALUE, writable=True)
-    operation_hours = integer(9, signed=False, nan=INIT_VALUE)
+    # 0..65535 hours (manual r6.4): 0x8000 is a reading here, and the gateway
+    # keeps the counter while it initialises.
+    operation_hours = integer(9, signed=False)
     alarm = boolean(10, nan=INIT_VALUE)
     error_code = integer(11, signed=False)
     window_timeout = integer(13, signed=False, nan=INIT_VALUE, writable=_minutes_0_30)

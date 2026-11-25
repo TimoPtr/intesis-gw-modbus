@@ -27,7 +27,11 @@ from intesis_gw_modbus.single_unit.device import (
     IntesisSingleUnitGateway,
 )
 
-from .conftest import seed_initialising_single_unit, seed_single_unit
+from .conftest import (
+    seed_initialising_single_unit,
+    seed_single_unit,
+    seed_undetermined_single_unit,
+)
 
 
 def gw(unit: MockModbusUnit) -> IntesisSingleUnitGateway:
@@ -103,10 +107,58 @@ async def test_typed_readings(mock_modbus_unit: MockModbusUnit) -> None:
     assert d.detected_temperature_format is TemperatureFormat.DECICELSIUS
 
 
-async def test_initialising_gateway_reads_none(
+async def test_initialising_gateway_hides_its_placeholders(
     mock_modbus_unit: MockModbusUnit,
 ) -> None:
+    """What the gateway reads while it initialises is not the unit's state."""
     seed_initialising_single_unit(mock_modbus_unit)
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    assert d.error is not None
+    assert d.error.state is ErrorState.INITIALISING
+    for name in ("power", "mode", "fan_speed", "vane", "alarm", "control_lock"):
+        assert getattr(d, name) is None, name
+    assert d.setpoint is None
+    assert d.current_temperature is None
+    assert d.outdoor_intake_temperature is None
+    assert d.return_path_temperature is None
+    assert d.operation_hours == 1234
+    assert d.undervoltage_hours == 3
+    assert d.max_fan_speeds == 4
+    assert d.window_timeout_minutes == 30
+    assert d.detected_temperature_format is None
+
+
+async def test_placeholders_are_real_once_the_gateway_runs(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """The same register values are the unit's state when nothing initialises."""
+    seed_initialising_single_unit(mock_modbus_unit)
+    mock_modbus_unit.holding[11] = 0
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    assert d.power is False
+    assert d.mode is Mode.AUTO
+    assert d.fan_speed is FanSpeed.AUTO
+    assert d.alarm is True
+    assert d.control_lock is not None
+
+
+async def test_operation_hours_cover_the_whole_register(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """32768 hours is a reading: the counter never holds the init value."""
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.holding[9] = 0x8000
+    d = gw(mock_modbus_unit)
+    await d.async_update()
+    assert d.operation_hours == 32768
+
+
+async def test_undetermined_gateway_reads_none(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    seed_undetermined_single_unit(mock_modbus_unit)
     d = gw(mock_modbus_unit)
     await d.async_update()
     assert d.power is None
@@ -349,17 +401,16 @@ async def test_read_raw_covers_all(mock_modbus_unit: MockModbusUnit) -> None:
     assert 47 not in raw["holding"]
 
 
-async def test_initialising_gateway_reads_none_everywhere(
+async def test_undetermined_gateway_reads_none_everywhere(
     mock_modbus_unit: MockModbusUnit,
 ) -> None:
-    seed_initialising_single_unit(mock_modbus_unit)
+    seed_undetermined_single_unit(mock_modbus_unit)
     d = gw(mock_modbus_unit)
     await d.async_update()
     for name in (
         "window_contact",
         "gateway_disabled",
         "remote_control_disabled",
-        "operation_hours",
         "alarm",
         "window_open",
         "window_timeout_minutes",

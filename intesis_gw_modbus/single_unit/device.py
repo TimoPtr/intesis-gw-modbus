@@ -16,6 +16,7 @@ from intesis_gw_modbus.enums import (
     VanePosition,
 )
 from intesis_gw_modbus.errors import (
+    INIT_ERROR_CODE,
     ErrorInfo,
     UnsupportedValueError,
     WrongGatewayError,
@@ -146,16 +147,30 @@ class IntesisSingleUnitGateway(Device):
     def _raw(self, celsius: float) -> int:
         return from_celsius(celsius, self.temperature_format)
 
+    @property
+    def _initialising(self) -> bool:
+        """
+        Whether the gateway is in the two minutes after it powers up.
+
+        The manual (r6.4, section 4.2.1) says some registers then "indicate an
+        undetermined value". On an INMBSMHI001R000 only the temperatures hold
+        ``INIT_VALUE``; the state of the unit reads as placeholders that look
+        valid (off, auto, an alarm), so those are withheld meanwhile.
+        """
+        return self.control.error_code == INIT_ERROR_CODE
+
     # -- AirConditioner ----------------------------------------------------
 
     @property
     def power(self) -> bool | None:
         """Whether the unit is on."""
-        return self.control.power
+        return None if self._initialising else self.control.power
 
     @property
     def mode(self) -> Mode | None:
         """The operating mode."""
+        if self._initialising:
+            return None
         return _lookup(self.brand.modes, self.control.mode)
 
     @property
@@ -169,6 +184,8 @@ class IntesisSingleUnitGateway(Device):
     @property
     def fan_speed(self) -> FanSpeed | None:
         """The fan speed."""
+        if self._initialising:
+            return None
         return _lookup(self._fan_speed_codes, self.control.fan_speed)
 
     @property
@@ -304,7 +321,7 @@ class IntesisSingleUnitGateway(Device):
     @property
     def alarm(self) -> bool | None:
         """Whether the unit reports an alarm condition."""
-        return self.control.alarm
+        return None if self._initialising else self.control.alarm
 
     @property
     def window_open(self) -> bool | None:
@@ -344,6 +361,8 @@ class IntesisSingleUnitGateway(Device):
     @property
     def control_lock(self) -> ControlLock | None:
         """The Center/Remote lock state (register 46)."""
+        if self._initialising:
+            return None
         return _lookup(CONTROL_LOCK_CODES, self.lock.control_lock)
 
     @property
