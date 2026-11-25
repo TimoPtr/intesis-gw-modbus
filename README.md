@@ -46,6 +46,12 @@ single-unit gateways are documented the same way but have not been checked.
 - Function codes 3, 4, 6 and 16, with 16 limited to one register per request.
   A block read must not touch an undefined address, so the library reads the
   documented blocks only, one request each.
+- Read off an INMBSMHI001R000 (software version 16, XY bus master): for the
+  two minutes after a reset the error code is 65532 and only the temperature
+  registers hold 0x8000. Power, mode and fan speed read 0, the alarm reads 1,
+  and the operation hours keep their value. The library therefore returns
+  `None` for power, mode, fan speed, alarm and control lock while the gateway
+  initialises. The reset through register 99 was not answered.
 
 ### Multi-unit gateways (INMBSxxx048O000 / INMBSxxx128O000)
 

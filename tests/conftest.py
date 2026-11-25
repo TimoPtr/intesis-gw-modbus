@@ -45,6 +45,27 @@ SINGLE_UNIT_REGISTERS: dict[int, int] = {
 
 _IDENTITY = {48, 49, 50}
 
+# What an INMBSMHI001R000 (software version 16, XY bus master) reads for the
+# two minutes after a reset, where it differs from normal operation. Read off
+# the hardware on 2026-11-25: only the temperatures hold INIT_VALUE.
+INITIALISING_OVERRIDES: dict[int, int] = {
+    0: 0,  # reads off
+    1: 0,  # reads auto
+    2: 0,  # reads auto
+    3: 0,
+    4: INIT_VALUE,
+    5: INIT_VALUE,
+    10: 1,  # reads as an alarm
+    11: 65532,  # initialising
+    22: INIT_VALUE,
+    23: INIT_VALUE,
+    25: 180,  # the limit of the mode it reads
+    46: 0,
+    60: INIT_VALUE,
+    65: INIT_VALUE,
+    66: INIT_VALUE,
+}
+
 
 def seed_single_unit(unit: MockModbusUnit) -> None:
     """Seed a healthy single-unit gateway."""
@@ -54,6 +75,18 @@ def seed_single_unit(unit: MockModbusUnit) -> None:
 
 def seed_initialising_single_unit(unit: MockModbusUnit) -> None:
     """Seed a single-unit gateway that is still initialising."""
+    for address, value in (SINGLE_UNIT_REGISTERS | INITIALISING_OVERRIDES).items():
+        unit.holding[address] = value
+
+
+def seed_undetermined_single_unit(unit: MockModbusUnit) -> None:
+    """
+    Seed a single-unit gateway whose data registers all hold INIT_VALUE.
+
+    The manual (r6.4, section 4.2.1) only says that some registers "indicate
+    an undetermined value" while the gateway initialises. The MHI gateway that
+    was measured limits this to the temperatures; this is the worst case.
+    """
     for address, value in SINGLE_UNIT_REGISTERS.items():
         unit.holding[address] = value if address in _IDENTITY else INIT_VALUE
     unit.holding[11] = 65532
