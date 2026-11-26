@@ -2,9 +2,10 @@
 """The single-unit gateway as a typed device."""
 
 from collections.abc import Iterable, Mapping
+from contextlib import suppress
 from typing import Final
 
-from modbus_connection import ModbusUnit
+from modbus_connection import ModbusTimeoutError, ModbusUnit
 from modbus_connection.model import Device, Raw, UpdateReport
 
 from intesis_gw_modbus.brands.base import BrandTable
@@ -434,8 +435,14 @@ class IntesisSingleUnitGateway(Device):
         await self.modbus_unit.write_register(ERROR_RESET_REGISTER, 1)
 
     async def async_reset_gateway(self) -> None:
-        """Reset the gateway (write-only register 99)."""
-        await self.modbus_unit.write_register(GATEWAY_RESET_REGISTER, 1)
+        """
+        Reset the gateway (write-only register 99).
+
+        An INMBSMHI001R000 restarts on the request and does not answer it, so
+        a timeout here is the reset having been taken, not a failure.
+        """
+        with suppress(ModbusTimeoutError):
+            await self.modbus_unit.write_register(GATEWAY_RESET_REGISTER, 1)
 
 
 def _lookup[T](mapping: Mapping[int, T], code: int | None) -> T | None:

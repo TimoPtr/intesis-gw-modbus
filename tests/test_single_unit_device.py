@@ -489,3 +489,22 @@ async def test_temperature_format_is_kept_while_initialising(
     )
     await d.async_update()
     assert d.temperature_format is TemperatureFormat.CELSIUS
+
+
+async def test_reset_gateway_does_not_wait_for_an_answer(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """The gateway restarts on the request and never answers it."""
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.fail_write(99, ModbusTimeoutError())
+    await gw(mock_modbus_unit).async_reset_gateway()
+
+
+async def test_reset_gateway_passes_other_errors_on(
+    mock_modbus_unit: MockModbusUnit,
+) -> None:
+    """A gateway that refuses the request did not restart."""
+    seed_single_unit(mock_modbus_unit)
+    mock_modbus_unit.fail_write(99, IllegalDataAddressError())
+    with pytest.raises(IllegalDataAddressError):
+        await gw(mock_modbus_unit).async_reset_gateway()

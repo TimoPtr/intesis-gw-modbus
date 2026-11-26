@@ -51,7 +51,8 @@ single-unit gateways are documented the same way but have not been checked.
   registers hold 0x8000. Power, mode and fan speed read 0, the alarm reads 1,
   and the operation hours keep their value. The library therefore returns
   `None` for power, mode, fan speed, alarm and control lock while the gateway
-  initialises. The reset through register 99 was not answered.
+  initialises. The reset through register 99 was not answered, so
+  `async_reset_gateway` treats a timeout as the reset having been taken.
 
 ### Multi-unit gateways (INMBSxxx048O000 / INMBSxxx128O000)
 
