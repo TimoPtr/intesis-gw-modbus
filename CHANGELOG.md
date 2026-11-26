@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 (2026-11-26)
+
+- `async_reset_gateway` of a single-unit gateway no longer raises when the
+  gateway does not answer. An INMBSMHI001R000 restarts on the request without
+  answering it, so the timeout was reported for a reset that worked. Other
+  errors still propagate.
+
 ## 0.3.1 (2026-11-25)
 
 Both fixes follow from reading an INMBSMHI001R000 while it initialises.
